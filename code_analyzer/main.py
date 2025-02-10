@@ -8,17 +8,15 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from code_analyzer.domain.enums import ModelName
 from code_analyzer.io.loader import CodebaseLoader
 from code_analyzer.prompts.human_prompts import (
-    DEVELOPER_PROMPT, FINAL_PROMPT, FIRST_ANALYZER_PROMPT,
-    FOLLOWUP_ANALYZER_PROMPT,
+    AUDITOR_PROMPT, FOLLOWUP_WRITER_PROMPT, INTEGRATION_PROMPT, WRITER_PROMPT,
 )
 from code_analyzer.prompts.system_prompt import (
-    ANALYZER_SYSTEM_PROMPT, DEVELOPER_SYSTEM_PROMPT,
-    FINALIZATION_SYSTEM_PROMPT,
+    WRITER_SYSTEM_PROMPT, AUDITOR_SYSTEM_PROMPT,
+    INTEGRATOR_SYSTEM_PROMPT,
 )
 from code_analyzer.settings import Settings
 
 CODE_SEPARATOR = "\n\n==================================\n\n"
-NUM_ITERATIONS = 3
 
 
 def write_output(data: str, file_name: str) -> None:
@@ -54,35 +52,34 @@ def create_llm(settings: Settings, model_name: ModelName) -> Model:
     )
 
 
-def create_analyzer_agent(llm: Model, settings: Settings) -> Agent:
+def create_writer_agent(llm: Model, settings: Settings) -> Agent:
     return Agent(
         model=llm,
         model_settings=create_llm_settings(settings),
-        system_prompt=ANALYZER_SYSTEM_PROMPT,
+        system_prompt=WRITER_SYSTEM_PROMPT,
         result_type=str,
     )
 
 
-def create_developer_agent(llm: Model, settings: Settings) -> Agent:
+def create_auditor_agent(llm: Model, settings: Settings) -> Agent:
     return Agent(
         model=llm,
         model_settings=create_llm_settings(settings),
-        system_prompt=DEVELOPER_SYSTEM_PROMPT,
+        system_prompt=AUDITOR_SYSTEM_PROMPT,
         result_type=str,
     )
 
 
-def create_finalizer_agent(llm: Model, settings: Settings) -> Agent:
+def create_integrator_agent(llm: Model, settings: Settings) -> Agent:
     return Agent(
         model=llm,
         model_settings=create_llm_settings(settings),
-        system_prompt=FINALIZATION_SYSTEM_PROMPT,
+        system_prompt=INTEGRATOR_SYSTEM_PROMPT,
         result_type=str,
     )
 
 
-def generate_docs_for_codebase(loader: CodebaseLoader, analyzer_agent: Agent, developer_agent: Agent,
-                               output_key: str) -> str:
+def generate_docs_for_codebase(loader: CodebaseLoader, writer: Agent, auditor: Agent, output_key: str) -> str:
     print(output_key.upper())
     tree = loader.load_all_files()
 
@@ -94,27 +91,37 @@ def generate_docs_for_codebase(loader: CodebaseLoader, analyzer_agent: Agent, de
     codebase = CODE_SEPARATOR.join(sections)
 
     # Generate first iteration of docs
-    user_input = FIRST_ANALYZER_PROMPT.format(structure=structure, codebase=codebase)
-    response = analyzer_agent.run_sync(user_prompt=user_input)
-    docs = response.data
+    user_input = WRITER_PROMPT.format(structure=structure, codebase=codebase)
+    response = writer.run_sync(user_prompt=user_input)
+    documentation = response.data
     history = response.new_messages()
 
+    feedback = generate_feedback(loader, auditor, documentation=documentation)
+
+    # Include the feedback and generate a second iteration of docs
+    user_input = FOLLOWUP_WRITER_PROMPT.format(feedback=feedback)
+    response = writer.run_sync(user_prompt=user_input, message_history=history)
+    documentation = response.data
+
+    # Write documentation to file
+    write_output(documentation, file_name=str(loader.root_path.name) + "_" + output_key)
+
+    return documentation
+
+
+def generate_feedback(loader: CodebaseLoader, auditor: Agent, documentation: str) -> str:
     # Provide a feedback for the generated docs
-    user_input = DEVELOPER_PROMPT.format(codebase=codebase, docs=docs)
-    response = developer_agent.run_sync(user_prompt=user_input)
+    tree = loader.load_all_files()
+    sections = [f"Filename: {file}\n\n{code}" for file, code in tree.items()]
+    codebase = CODE_SEPARATOR.join(sections)
+
+    user_input = AUDITOR_PROMPT.format(codebase=codebase, docs=documentation)
+    response = auditor.run_sync(user_prompt=user_input)
     feedback = response.data
 
     print(feedback)
 
-    # Include the feedback and generate a second iteration of docs
-    user_input = FOLLOWUP_ANALYZER_PROMPT.format(feedback=feedback)
-    response = analyzer_agent.run_sync(user_prompt=user_input, message_history=history)
-    docs = response.data
-
-    # Write documentation to file
-    write_output(docs, file_name=str(loader.root_path.name) + "_" + output_key)
-
-    return docs
+    return feedback
 
 
 def generate_documentation() -> None:
@@ -122,41 +129,35 @@ def generate_documentation() -> None:
     exclude = ["prompts"]
     sections = {
         "generic": [],
-        "controller": ["routes", "security", "app", "dependencies"],
+        "controller": ["routes", "security"],
         "service": ["agents", "chat", "memory"],
         "repository": ["repository"],
-        "models": ["models"],
-        "api": ["api"],
+        "extra": ["api", "models"],
     }
 
     settings = Settings()
     llm = create_llm(settings, ModelName.CLAUDE_3_5_SONNET)
-    analyzer_agent = create_analyzer_agent(llm, settings)
+    writer_agent = create_writer_agent(llm, settings)
 
     llm = create_llm(settings, ModelName.CLAUDE_3_SONNET)
-    developer_agent = create_developer_agent(llm, settings)
+    auditor_agent = create_auditor_agent(llm, settings)
 
     llm = create_llm(settings, ModelName.CLAUDE_3_5_SONNET)
-    finalizer_agent = create_finalizer_agent(llm, settings)
-
-    # generic_docs = read_output(str(root.name) + "_generic")
-    # repository_docs = read_output(str(root.name) + "_repository")
-    # service_docs = read_output(str(root.name) + "_service")
-    # routes_docs = read_output(str(root.name) + "_routes")
+    integrator_agent = create_integrator_agent(llm, settings)
 
     docs = {}
     for key, includes in sections.items():
         loader = CodebaseLoader(root_path=root, exclude=exclude, include=includes)
-        doc = generate_docs_for_codebase(loader, analyzer_agent, developer_agent, output_key=key)
+        doc = generate_docs_for_codebase(loader, writer=writer_agent, auditor=auditor_agent, output_key=key)
+        # doc = read_output(file_name=str(loader.root_path.name) + "_" + key)
+
         docs[key] = doc
 
     # Integrate the previous docs into a final documentation
     final = docs.pop("generic")
     for key, doc in docs.items():
-        docs = f"Documentation:\n\n{final}{CODE_SEPARATOR}Documentation for {key}\n\n{doc}"
-
-        user_input = FINAL_PROMPT.format(docs=docs)
-        response = finalizer_agent.run_sync(user_prompt=user_input)
+        user_input = INTEGRATION_PROMPT.format(documentation=final, key=key, section_detail=doc)
+        response = integrator_agent.run_sync(user_prompt=user_input)
 
         final = response.data
         write_output(final, file_name=str(root.name))
