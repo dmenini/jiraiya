@@ -1,0 +1,9 @@
+# python virtual environment used during development
+
+venv*
+.idea
+.vscode/*
+**/__pycache__
+**/.pytest_cache
+**/.DS_Store
+reports

@@ -1,0 +1,11 @@
+include:
+  - project: 'swisscom/cai/ops/pipelines'
+    ref: 1.x
+    file: 'python/app/main.yaml'
+
+variables:
+  PYTHON_DEFAULT_BUILDER_IMAGE: $PYTHON_3_13_BUILDER_IMAGE
+  APP_NAME: aaas/code-analyzer
+  POETRY_HTTP_BASIC_ARTIFACTORY_USERNAME: $PLATO_ARTIFACTORY_CREDENTIALS_USR
+  POETRY_HTTP_BASIC_ARTIFACTORY_PASSWORD: $PLATO_ARTIFACTORY_CREDENTIALS_PSW
+
