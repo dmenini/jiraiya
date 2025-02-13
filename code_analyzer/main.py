@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from anthropic import AsyncAnthropicBedrock
@@ -8,14 +9,16 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from code_analyzer.domain.documentation import TechnicalDoc
 from code_analyzer.domain.enums import ModelName
 from code_analyzer.io.code_loader import CodebaseLoader
-from code_analyzer.io.markdown import read_json, write_json_as_md, write_md
+from code_analyzer.io.markdown import write_md
 from code_analyzer.prompts.system_prompt import (
     CODE_ANALYSIS_PROMPT,
     TECH_WRITER_SYSTEM_PROMPT,
     WRITER_SYSTEM_PROMPT,
 )
 from code_analyzer.settings import Settings
-from code_analyzer.writer.generator import generate_docs_for_file
+from code_analyzer.writer.generator import generate_code_analysis
+
+logger = logging.getLogger()
 
 LOAD_FROM_FILE = True
 
@@ -60,26 +63,9 @@ def create_structured_agent(llm: Model, settings: Settings, prompt: str) -> Agen
     )
 
 
-def generate_code_analysis(
-    code_tree: dict[str, str],
-    agent: Agent[None, TechnicalDoc],
-    filepath: Path,
-) -> dict[str, TechnicalDoc]:
-    if LOAD_FROM_FILE:
-        file_docs = read_json(filepath)
-    else:
-        file_docs = {}
-        for path, code in code_tree.items():
-            print(f"Processing {path}")
-            file_docs[path] = generate_docs_for_file(code=code, writer=agent)
-
-        write_json_as_md(file_docs, file_name=filepath)
-
-    return file_docs
-
-
-def write_code_analysis(project_name: str, file_docs: dict[str, TechnicalDoc],
-                        module_docs: dict[str, TechnicalDoc]) -> str:
+def write_code_analysis(
+    project_name: str, file_docs: dict[str, TechnicalDoc], module_docs: dict[str, TechnicalDoc]
+) -> str:
     name = project_name.replace("_", " ").title()
     final_doc = f"# {name} Technical Documentation\n\n"
 
@@ -101,7 +87,7 @@ def write_code_analysis(project_name: str, file_docs: dict[str, TechnicalDoc],
     return final_doc
 
 
-def generate_documentation():
+def generate_documentation() -> None:
     settings = Settings()
     llm = create_llm(settings, ModelName.CLAUDE_3_5_SONNET)
 
@@ -113,13 +99,19 @@ def generate_documentation():
     # File level docs, to be used as chunks and in plato docs (low level section)
     tree = loader.load_all_files()
     file_docs = generate_code_analysis(
-        code_tree=tree, agent=code_analyzer, filepath=Path(root.name) / "file_level_analysis",
+        code_tree=tree,
+        agent=code_analyzer,
+        filepath=Path(root.name) / "file_level_analysis",
+        load_from_file=LOAD_FROM_FILE,
     )
 
     # Top module level docs
     module_tree = loader.load_all_modules()
     module_docs = generate_code_analysis(
-        code_tree=module_tree, agent=code_analyzer, filepath=Path(root.name) / "module_level_analysis",
+        code_tree=module_tree,
+        agent=code_analyzer,
+        filepath=Path(root.name) / "module_level_analysis",
+        load_from_file=LOAD_FROM_FILE,
     )
 
     # Overall tech docs, to be used in plato docs (mid level section)

@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 class CodebaseLoader:
-    def __init__(self, root_path: Path, exclude: list[str], include: list[str]):
+    def __init__(self, root_path: Path, exclude: list[str], include: list[str]) -> None:
         self.root_path = root_path
         self.exclude = exclude
         self.include = include

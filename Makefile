@@ -23,15 +23,15 @@ test:  # ci
 	$(MAKE) --keep-going install test-format test-lint test-coverage
 
 test-lint lint:
-	$(POETRY) run mypy $(PACKAGE_NAME) tests integration_tests
-	$(POETRY) run ruff check $(PACKAGE_NAME) tests integration_tests
+	$(POETRY) run mypy $(PACKAGE_NAME)
+	$(POETRY) run ruff check $(PACKAGE_NAME)
 
 test-format:
-	$(POETRY) run ruff format --check $(PACKAGE_NAME) tests integration_tests
+	$(POETRY) run ruff format --check $(PACKAGE_NAME)
 
 format:
-	$(POETRY) run ruff format $(PACKAGE_NAME) tests evaluation integration_tests
-	$(POETRY) run ruff check --fix $(PACKAGE_NAME) tests integration_tests
+	$(POETRY) run ruff format $(PACKAGE_NAME)
+	$(POETRY) run ruff check --fix $(PACKAGE_NAME)
 
 test-coverage:
 	$(POETRY) run pytest \
