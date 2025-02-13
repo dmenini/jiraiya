@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     """Top-p filters out tokens whose cumulative probability is less than the specified threshold.
     It allows for more diversity in the output while still avoiding low-probability tokens."""
 
-    max_tokens: int = Field(default=100_000, ge=0)
+    max_tokens: int = Field(default=1_000_000, ge=0)
     """Maximum number of tokens that the LLM generates."""
 
     aws_default_region: str = "eu-central-1"

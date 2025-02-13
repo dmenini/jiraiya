@@ -21,7 +21,7 @@ FOLLOWUP_WRITER_PROMPT = """Please generate again the documentation you first pr
 {feedback}
 """
 
-INTEGRATION_PROMPT = """Augment the provided documentation with additional information from the detailed section:
+INTEGRATION_PROMPT = """Enrich the provided documentation with additional information from the detailed component section. Remember to always provide a self-contained documentation, without references to previous versions.
 Documentation to augment:
 
 {documentation}

@@ -5,30 +5,19 @@ from pydantic_ai.agent import Agent
 from pydantic_ai.models import Model, ModelSettings
 from pydantic_ai.models.anthropic import AnthropicModel
 
+from code_analyzer.domain.documentation import TechnicalDoc
 from code_analyzer.domain.enums import ModelName
-from code_analyzer.io.loader import CodebaseLoader
-from code_analyzer.prompts.human_prompts import (
-    AUDITOR_PROMPT, FOLLOWUP_WRITER_PROMPT, INTEGRATION_PROMPT, WRITER_PROMPT,
-)
+from code_analyzer.io.code_loader import CodebaseLoader
+from code_analyzer.io.markdown import read_json, write_json_as_md, write_md
 from code_analyzer.prompts.system_prompt import (
-    WRITER_SYSTEM_PROMPT, AUDITOR_SYSTEM_PROMPT,
-    INTEGRATOR_SYSTEM_PROMPT,
+    CODE_ANALYSIS_PROMPT,
+    TECH_WRITER_SYSTEM_PROMPT,
+    WRITER_SYSTEM_PROMPT,
 )
 from code_analyzer.settings import Settings
+from code_analyzer.writer.generator import generate_docs_for_file
 
-CODE_SEPARATOR = "\n\n==================================\n\n"
-
-
-def write_output(data: str, file_name: str) -> None:
-    output_file = (Path("output") / file_name).with_suffix(".md")
-    with output_file.open("w") as fp:
-        fp.write(data)
-
-
-def read_output(file_name: str) -> str:
-    output_file = (Path("output") / file_name).with_suffix(".md")
-    with output_file.open("r") as fp:
-        return fp.read()
+LOAD_FROM_FILE = True
 
 
 def create_llm_settings(settings: Settings) -> ModelSettings:
@@ -52,115 +41,101 @@ def create_llm(settings: Settings, model_name: ModelName) -> Model:
     )
 
 
-def create_writer_agent(llm: Model, settings: Settings) -> Agent:
+def create_str_agent(llm: Model, settings: Settings, prompt: str) -> Agent[None, str]:
     return Agent(
         model=llm,
         model_settings=create_llm_settings(settings),
-        system_prompt=WRITER_SYSTEM_PROMPT,
-        result_type=str,
+        system_prompt=prompt,
+        retries=1,
     )
 
 
-def create_auditor_agent(llm: Model, settings: Settings) -> Agent:
+def create_structured_agent(llm: Model, settings: Settings, prompt: str) -> Agent[None, TechnicalDoc]:
     return Agent(
         model=llm,
         model_settings=create_llm_settings(settings),
-        system_prompt=AUDITOR_SYSTEM_PROMPT,
-        result_type=str,
+        system_prompt=prompt,
+        result_type=TechnicalDoc,
+        retries=1,
     )
 
 
-def create_integrator_agent(llm: Model, settings: Settings) -> Agent:
-    return Agent(
-        model=llm,
-        model_settings=create_llm_settings(settings),
-        system_prompt=INTEGRATOR_SYSTEM_PROMPT,
-        result_type=str,
-    )
+def generate_code_analysis(
+    code_tree: dict[str, str],
+    agent: Agent[None, TechnicalDoc],
+    filepath: Path,
+) -> dict[str, TechnicalDoc]:
+    if LOAD_FROM_FILE:
+        file_docs = read_json(filepath)
+    else:
+        file_docs = {}
+        for path, code in code_tree.items():
+            print(f"Processing {path}")
+            file_docs[path] = generate_docs_for_file(code=code, writer=agent)
+
+        write_json_as_md(file_docs, file_name=filepath)
+
+    return file_docs
 
 
-def generate_docs_for_codebase(loader: CodebaseLoader, writer: Agent, auditor: Agent, output_key: str) -> str:
-    print(output_key.upper())
-    tree = loader.load_all_files()
+def write_code_analysis(project_name: str, file_docs: dict[str, TechnicalDoc],
+                        module_docs: dict[str, TechnicalDoc]) -> str:
+    name = project_name.replace("_", " ").title()
+    final_doc = f"# {name} Technical Documentation\n\n"
 
-    all_files = list(tree.keys())
-    structure = "\n".join(all_files)
-    print(structure)
+    modules = sorted(module_docs.keys())
+    top_level_files = sorted(path for path in file_docs if not any(path.startswith(module) for module in modules))
 
-    sections = [f"Filename: {file}\n\n{code}" for file, code in tree.items()]
-    codebase = CODE_SEPARATOR.join(sections)
+    for file in top_level_files:
+        final_doc += file_docs[file].to_markdown(path=file, template="standalone")
 
-    # Generate first iteration of docs
-    user_input = WRITER_PROMPT.format(structure=structure, codebase=codebase)
-    response = writer.run_sync(user_prompt=user_input)
-    documentation = response.data
-    history = response.new_messages()
+    for module in modules:
+        final_doc += module_docs[module].to_markdown(path=module, template="header")
 
-    feedback = generate_feedback(loader, auditor, documentation=documentation)
+        files = sorted([file for file in file_docs if file.startswith(module)])
+        for file in files:
+            final_doc += file_docs[file].to_markdown(path=file, template="subsection")
 
-    # Include the feedback and generate a second iteration of docs
-    user_input = FOLLOWUP_WRITER_PROMPT.format(feedback=feedback)
-    response = writer.run_sync(user_prompt=user_input, message_history=history)
-    documentation = response.data
+    write_md(final_doc, file_name=Path(project_name) / "code_analysis")
 
-    # Write documentation to file
-    write_output(documentation, file_name=str(loader.root_path.name) + "_" + output_key)
-
-    return documentation
+    return final_doc
 
 
-def generate_feedback(loader: CodebaseLoader, auditor: Agent, documentation: str) -> str:
-    # Provide a feedback for the generated docs
-    tree = loader.load_all_files()
-    sections = [f"Filename: {file}\n\n{code}" for file, code in tree.items()]
-    codebase = CODE_SEPARATOR.join(sections)
-
-    user_input = AUDITOR_PROMPT.format(codebase=codebase, docs=documentation)
-    response = auditor.run_sync(user_prompt=user_input)
-    feedback = response.data
-
-    print(feedback)
-
-    return feedback
-
-
-def generate_documentation() -> None:
-    root = Path("/Users/taamedag/Desktop/cai/aaas/chat-api/chat_api")
-    exclude = ["prompts"]
-    sections = {
-        "generic": [],
-        "controller": ["routes", "security"],
-        "service": ["agents", "chat", "memory"],
-        "repository": ["repository"],
-        "extra": ["api", "models"],
-    }
-
+def generate_documentation():
     settings = Settings()
     llm = create_llm(settings, ModelName.CLAUDE_3_5_SONNET)
-    writer_agent = create_writer_agent(llm, settings)
 
-    llm = create_llm(settings, ModelName.CLAUDE_3_SONNET)
-    auditor_agent = create_auditor_agent(llm, settings)
+    root = Path("/Users/taamedag/Desktop/cai/aaas/chat-api/chat_api")
+    loader = CodebaseLoader(root_path=root, exclude=[], include=[])
 
-    llm = create_llm(settings, ModelName.CLAUDE_3_5_SONNET)
-    integrator_agent = create_integrator_agent(llm, settings)
+    code_analyzer = create_structured_agent(llm, settings, prompt=CODE_ANALYSIS_PROMPT)
 
-    docs = {}
-    for key, includes in sections.items():
-        loader = CodebaseLoader(root_path=root, exclude=exclude, include=includes)
-        doc = generate_docs_for_codebase(loader, writer=writer_agent, auditor=auditor_agent, output_key=key)
-        # doc = read_output(file_name=str(loader.root_path.name) + "_" + key)
+    # File level docs, to be used as chunks and in plato docs (low level section)
+    tree = loader.load_all_files()
+    file_docs = generate_code_analysis(
+        code_tree=tree, agent=code_analyzer, filepath=Path(root.name) / "file_level_analysis",
+    )
 
-        docs[key] = doc
+    # Top module level docs
+    module_tree = loader.load_all_modules()
+    module_docs = generate_code_analysis(
+        code_tree=module_tree, agent=code_analyzer, filepath=Path(root.name) / "module_level_analysis",
+    )
 
-    # Integrate the previous docs into a final documentation
-    final = docs.pop("generic")
-    for key, doc in docs.items():
-        user_input = INTEGRATION_PROMPT.format(documentation=final, key=key, section_detail=doc)
-        response = integrator_agent.run_sync(user_prompt=user_input)
+    # Overall tech docs, to be used in plato docs (mid level section)
+    final_doc = write_code_analysis(project_name=root.name, file_docs=file_docs, module_docs=module_docs)
 
-        final = response.data
-        write_output(final, file_name=str(root.name))
+    # Overall docs, to be used in plato docs (high level tech section)
+    tech_writer = create_str_agent(llm, settings, prompt=TECH_WRITER_SYSTEM_PROMPT)
+    response = tech_writer.run_sync(user_prompt=final_doc)
+    final_documentation = response.data
+    write_md(final_documentation, file_name=Path(root.name) / "overall_analysis")
+
+    # Overall docs, to be used in plato docs (high level section)
+    writer = create_str_agent(llm, settings, prompt=WRITER_SYSTEM_PROMPT)
+    response = writer.run_sync(user_prompt=final_doc)
+    final_documentation = response.data
+    write_md(final_documentation, file_name=Path(root.name) / "high_level_documentation")
 
 
 if __name__ == "__main__":

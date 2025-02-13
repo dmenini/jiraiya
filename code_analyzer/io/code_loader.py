@@ -1,6 +1,5 @@
-import ast
+from collections import defaultdict
 from pathlib import Path
-import astpretty
 
 
 class CodebaseLoader:
@@ -22,12 +21,6 @@ class CodebaseLoader:
             code = f.read()
         return code
 
-    def parse_file(self, file_path: Path) -> str:
-        """Parses a Python file and returns its AST."""
-        code = self.load_file(file_path)
-        tree = ast.parse(code)
-        return astpretty.pformat(tree)
-
     def load_all_files(self) -> dict[str, str]:
         python_files = self._get_all_files()
 
@@ -40,19 +33,32 @@ class CodebaseLoader:
                     tree[str(relative_path)] = code
         return tree
 
-    def generate_ast_for_codebase(self) -> dict[str, str]:
-        """Generates AST for all Python files in the codebase, preserving directory structure."""
-        python_files = self._get_all_files()
+    def load_all_modules(self, file_separator: str = "\n\n") -> dict[str, str]:
+        filepaths = self._get_all_files()
+        top_modules = set()
 
-        ast_trees = {}
-        for file in python_files:
-            relative_path = file.relative_to(self.root_path)  # Preserve structure
-            if self._is_included(relative_path) and not self._is_excluded(relative_path):
-                ast_tree = self.parse_file(file)
-                if ast_tree:
-                    ast_trees[str(relative_path)] = ast_tree
+        for path in filepaths:
+            relative_path = path.relative_to(self.root_path)
+            parts = relative_path.parts
+            if len(parts) > 1:
+                top_modules.add(parts[0])  # First directory as top module
 
-        return ast_trees
+        tree = defaultdict(str)
+        for module_name in top_modules:
+            module_paths = self._get_module_files(filepaths=filepaths, module_name=module_name)
+            module_code = map(self._load_formatted_file_content, module_paths)
+            tree[module_name] = file_separator.join(module_code)
+
+        return dict(tree)
+
+    def _get_module_files(self, filepaths: list[Path], module_name: str) -> list[Path]:
+        """Return all file paths belonging to the given module."""
+        return [file for file in filepaths if file.relative_to(self.root_path).parts[0] == module_name]
+
+    def _load_formatted_file_content(self, path: Path) -> str:
+        """Load code and add a comment-like line at the top to include the file path."""
+        template = "# File: {path}\n\n{code}"
+        return template.format(path=path.relative_to(self.root_path), code=self.load_file(path))
 
     def _is_included(self, file: Path) -> bool:
         if not self.include:
