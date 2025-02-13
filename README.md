@@ -13,9 +13,10 @@
 
 ### Run Service Locally
 
-1. Make sure the local stack is running.
-2. Export the AWS variables `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN`
-3. Run the service: `make run`.
+1. Export the AWS variables `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN`
+2. Run the service: `make run <project_name>`.
+
+> The make run target will look for the project with the given name recursively from the Desktop folder.
 
 ### Tests
 

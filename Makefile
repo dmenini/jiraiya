@@ -65,6 +65,11 @@ build:  # ci
 		.
 
 run:
-	$(POETRY) run ./run.sh
+	@PROJECT=$(word 2, $(MAKECMDGOALS)); \
+	./run.sh "$$PROJECT"
+
+# Allow make to ignore unknown targets (prevents issues with positional args)
+%:
+	@:
 
 .PHONY: install clean-install test lint format test-lint test-coverage test-format unit-test build run

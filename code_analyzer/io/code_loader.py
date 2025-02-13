@@ -3,10 +3,10 @@ from pathlib import Path
 
 
 class CodebaseLoader:
-    def __init__(self, root_path: Path, exclude: list[str], include: list[str]) -> None:
+    def __init__(self, root_path: Path, exclude: list[str] | None = None, include: list[str] | None = None) -> None:
         self.root_path = root_path
-        self.exclude = exclude
-        self.include = include
+        self.exclude = exclude or []
+        self.include = include or []
 
     def _get_all_files(self) -> list[Path]:
         """Recursively finds all Python files in the given directory."""

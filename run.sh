@@ -1,11 +1,18 @@
 #!/bin/bash
 
-#export HTTP_PROXY=http://aproxy.corproot.net:8080
-#export http_proxy=http://aproxy.corproot.net:8080
-#export HTTPS_PROXY=http://aproxy.corproot.net:8080
-#export https_proxy=http://aproxy.corproot.net:8080
-#export NO_PROXY=localhost,docker.internal,.eks.amazonaws.com
-#export no_proxy=localhost,docker.internal,.eks.amazonaws.com
+project_path="$1"
+
+if [ -z "$project_path" ]; then
+    echo "Error: Missing required parameter (path to project main module)."
+    exit 1
+fi
+
+export HTTP_PROXY=http://aproxy.corproot.net:8080
+export http_proxy=http://aproxy.corproot.net:8080
+export HTTPS_PROXY=http://aproxy.corproot.net:8080
+export https_proxy=http://aproxy.corproot.net:8080
+export NO_PROXY=localhost,docker.internal,.eks.amazonaws.com
+export no_proxy=localhost,docker.internal,.eks.amazonaws.com
 
 if [ ! "$AWS_DEFAULT_REGION" ]; then
   export AWS_DEFAULT_REGION=eu-central-1
@@ -27,4 +34,5 @@ if [[ -z "$AWS_SESSION_TOKEN" ]]; then
   exit 1
 fi
 
-python -m code_analyzer.main
+echo "Starting analysis of project $project_path"
+python -m code_analyzer.main "${project_path}"
