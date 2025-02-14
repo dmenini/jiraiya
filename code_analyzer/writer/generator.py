@@ -37,7 +37,7 @@ def generate_code_analysis(
             logger.info("Processing %s", path)
             file_docs[path] = generate_docs_for_file(code=code, writer=agent)
 
-        write_json_as_md(file_docs, file_name=filepath)
+        write_json_as_md(file_docs, filepath=filepath)
 
     return file_docs
 
@@ -62,7 +62,7 @@ def write_code_analysis(
         for file in files:
             final_doc += file_docs[file].to_markdown(path=file, template="subsection")
 
-    write_md(final_doc, file_name=filepath)
+    write_md(final_doc, filepath=filepath)
 
     return final_doc
 
@@ -106,6 +106,6 @@ def generate_high_level_documentation(agent: Agent[None, str], documentation: st
 
         hl_documentation += f"## {section}\n\n{section_doc}\n\n"
 
-    write_md(hl_documentation, file_name=filepath)
+    write_md(hl_documentation, filepath=filepath)
 
     return hl_documentation

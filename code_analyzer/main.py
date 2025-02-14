@@ -10,6 +10,7 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from code_analyzer.domain.documentation import TechnicalDoc
 from code_analyzer.domain.enums import ModelName
 from code_analyzer.io.code_loader import CodebaseLoader
+from code_analyzer.io.markdown import read_md
 from code_analyzer.prompts.system_prompt import (
     CODE_ANALYSIS_PROMPT,
     WRITER_SYSTEM_PROMPT,
@@ -74,14 +75,6 @@ def generate_documentation(project_root: str) -> None:
 
     code_analyzer = create_structured_agent(llm, settings, prompt=CODE_ANALYSIS_PROMPT)
 
-    # File level docs, to be used as chunks and in plato docs (low level section)
-    tree = loader.load_all_files()
-    file_docs = generate_code_analysis(
-        code_tree=tree,
-        agent=code_analyzer,
-        filepath=Path(root.name) / "file_level_analysis",
-    )
-
     # Top module level docs
     module_tree = loader.load_all_modules()
     module_docs = generate_code_analysis(
@@ -90,12 +83,26 @@ def generate_documentation(project_root: str) -> None:
         filepath=Path(root.name) / "module_level_analysis",
     )
 
-    # Overall tech docs, to be used in plato docs (mid level section)
-    final_doc = write_code_analysis(
-        file_docs=file_docs,
-        module_docs=module_docs,
-        filepath=Path(root.name) / "code_analysis",
-    )
+    tree = loader.load_all_files()
+    if len(tree) < settings.max_file_count:
+        # File level docs, to be used as chunks and in plato docs (low level section)
+        file_docs = generate_code_analysis(
+            code_tree=tree,
+            agent=code_analyzer,
+            filepath=Path(root.name) / "file_level_analysis",
+        )
+
+        # Overall tech docs, to be used in plato docs (mid level section)
+        final_doc = write_code_analysis(
+            file_docs=file_docs,
+            module_docs=module_docs,
+            filepath=Path(root.name) / "code_analysis",
+        )
+
+    else:
+        # In case of too many files we simply use the module analysis
+        logger.info("Found %d files in the project: file level analysis skipped", len(tree))
+        final_doc = read_md(filepath=Path(root.name) / "module_level_analysis")
 
     # Overall docs, to be used in plato docs (high level section)
     writer = create_str_agent(llm, settings, prompt=WRITER_SYSTEM_PROMPT)

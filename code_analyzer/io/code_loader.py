@@ -1,6 +1,8 @@
 from collections import defaultdict
 from pathlib import Path
 
+ALLOWED_EXTENSIONS = [".py", ".kt"]
+
 
 class CodebaseLoader:
     def __init__(self, root_path: Path, exclude: list[str] | None = None, include: list[str] | None = None) -> None:
@@ -10,11 +12,11 @@ class CodebaseLoader:
 
     def _get_all_files(self) -> list[Path]:
         """Recursively finds all Python files in the given directory."""
-        if self.root_path.is_file() and self.root_path.suffix in ["py", "kt"]:
+        if self.root_path.is_file() and self.root_path.suffix in ALLOWED_EXTENSIONS:
             return [self.root_path]
 
-        all_files = list(self.root_path.rglob("*.py"))
-        return all_files
+        all_files = [file for ext in ALLOWED_EXTENSIONS for file in self.root_path.rglob("*" + ext)]
+        return sorted(all_files)
 
     def load_file(self, file_path: Path) -> str:
         with file_path.open("r", encoding="utf-8") as f:
@@ -29,7 +31,7 @@ class CodebaseLoader:
             relative_path = file.relative_to(self.root_path)  # Preserve structure
             if self._is_included(relative_path) and not self._is_excluded(relative_path):
                 code = self.load_file(file)
-                if code:
+                if code.strip():
                     tree[str(relative_path)] = code
         return tree
 
@@ -44,7 +46,7 @@ class CodebaseLoader:
                 top_modules.add(parts[0])  # First directory as top module
 
         tree = defaultdict(str)
-        for module_name in top_modules:
+        for module_name in sorted(top_modules):
             module_paths = self._get_module_files(filepaths=filepaths, module_name=module_name)
             module_code = map(self._load_formatted_file_content, module_paths)
             tree[module_name] = file_separator.join(module_code)
