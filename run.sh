@@ -7,13 +7,6 @@ if [ -z "$project_path" ]; then
     exit 1
 fi
 
-export HTTP_PROXY=http://aproxy.corproot.net:8080
-export http_proxy=http://aproxy.corproot.net:8080
-export HTTPS_PROXY=http://aproxy.corproot.net:8080
-export https_proxy=http://aproxy.corproot.net:8080
-export NO_PROXY=localhost,docker.internal,.eks.amazonaws.com
-export no_proxy=localhost,docker.internal,.eks.amazonaws.com
-
 if [ ! "$AWS_DEFAULT_REGION" ]; then
   export AWS_DEFAULT_REGION=eu-central-1
   echo "No AWS_DEFAULT_REGION set, will use default: $AWS_DEFAULT_REGION"

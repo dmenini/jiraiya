@@ -1,7 +1,4 @@
-REGISTRY=plato-docker.artifactory.swisscom.com
-IMAGE=aaas/code-analyzer
-PACKAGE_NAME=code_analyzer
-DOCKERFILE_PATH=cicd/Dockerfile
+PACKAGE_NAME=doc_scribe
 POETRY=poetry
 
 VERSION=dev
@@ -10,7 +7,7 @@ VERSION=dev
 # You must remove the venv under {cache-dir}/virtualenvs if one exists, before this taking effect
 export POETRY_VIRTUALENVS_IN_PROJECT=true
 
-install:  # ci
+install:
 	$(POETRY) install
 
 clean-install:
@@ -19,19 +16,17 @@ clean-install:
 	$(POETRY) lock
 	$(POETRY) install
 
-test:  # ci
+test:
 	$(MAKE) --keep-going install test-format test-lint test-coverage
 
-test-lint lint:
-	$(POETRY) run mypy $(PACKAGE_NAME)
-	$(POETRY) run ruff check $(PACKAGE_NAME)
-
-test-format:
-	$(POETRY) run ruff format --check $(PACKAGE_NAME)
+lint:
+	$(POETRY) run mypy $(PACKAGE_NAME) tests
+	$(POETRY) run ruff check $(PACKAGE_NAME) tests
+	$(POETRY) run ruff format --check $(PACKAGE_NAME) tests
 
 format:
-	$(POETRY) run ruff format $(PACKAGE_NAME)
-	$(POETRY) run ruff check --fix $(PACKAGE_NAME)
+	$(POETRY) run ruff format $(PACKAGE_NAME) tests
+	$(POETRY) run ruff check --fix $(PACKAGE_NAME) tests
 
 test-coverage:
 	$(POETRY) run pytest \
@@ -48,22 +43,6 @@ TEST_TARGET ?= tests/
 unit-test:
 	$(POETRY) run pytest $(TEST_TARGET)
 
-# If building on ARM platform (M1 Mac) use buildx plugin
-# https://github.com/docker/buildx#getting-started
-DOCKER_BUILD=docker build
-ifeq ($(shell uname -p),arm)
-	DOCKER_BUILD=docker buildx build --platform=linux/amd64 --load
-endif
-
-build:  # ci
-	$(DOCKER_BUILD) \
-		--build-arg "BUILD_VERSION=$(VERSION)" \
-		--build-arg PLATO_ARTIFACTORY_CREDENTIALS_USR \
-		--build-arg PLATO_ARTIFACTORY_CREDENTIALS_PSW \
-		-t "$(REGISTRY)/$(IMAGE):$(VERSION)" \
-		-f $(DOCKERFILE_PATH) \
-		.
-
 run:
 	@PROJECT=$(word 2, $(MAKECMDGOALS)); \
 	./run.sh "$$PROJECT"
@@ -72,4 +51,4 @@ run:
 %:
 	@:
 
-.PHONY: install clean-install test lint format test-lint test-coverage test-format unit-test build run
+.PHONY: install clean-install test lint format test-coverage unit-test build run

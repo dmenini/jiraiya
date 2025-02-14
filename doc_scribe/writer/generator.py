@@ -3,9 +3,9 @@ from pathlib import Path
 
 from pydantic_ai.agent import Agent
 
-from code_analyzer.domain.documentation import TechnicalDoc
-from code_analyzer.io.markdown import read_json, write_json_as_md, write_md
-from code_analyzer.prompts.system_prompt import (
+from doc_scribe.domain.documentation import TechnicalDoc
+from doc_scribe.io.markdown import read_json, write_json_as_md, write_md
+from doc_scribe.prompts.system_prompt import (
     ARCHITECTURE_PROMPT,
     CONCERNS_PROMPT,
     DATA_FLOW_PROMPT,

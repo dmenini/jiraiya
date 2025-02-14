@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from code_analyzer.domain.documentation import TechnicalDoc
+from doc_scribe.domain.documentation import TechnicalDoc
 
 
 def convert_json_to_md(data: dict[str, TechnicalDoc]) -> str:

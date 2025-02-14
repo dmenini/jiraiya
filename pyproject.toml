@@ -1,14 +1,9 @@
 [tool.poetry]
-name = "code-analyzer"
+name = "doc-scribe"
 version = "0.1.0"
 description = ""
-authors = ["taamedag <Davide.Menini@swisscom.com>"]
+authors = ["dmenini"]
 readme = "README.md"
-
-[[tool.poetry.source]]
-name = "artifactory"
-priority = "primary"
-url = "https://artifactory.swisscom.com/artifactory/api/pypi/plato-pypi-virtual/simple/"
 
 [tool.poetry.dependencies]
 python = "^3.13"

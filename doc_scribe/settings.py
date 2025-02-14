@@ -1,7 +1,7 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-from code_analyzer.domain.enums import ModelName
+from doc_scribe.domain.enums import ModelName
 
 
 class Settings(BaseSettings):

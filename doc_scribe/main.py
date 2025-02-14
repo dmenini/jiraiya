@@ -7,16 +7,16 @@ from pydantic_ai.agent import Agent
 from pydantic_ai.models import Model, ModelSettings
 from pydantic_ai.models.anthropic import AnthropicModel
 
-from code_analyzer.domain.documentation import TechnicalDoc
-from code_analyzer.domain.enums import ModelName
-from code_analyzer.io.code_loader import CodebaseLoader
-from code_analyzer.io.markdown import read_md
-from code_analyzer.prompts.system_prompt import (
+from doc_scribe.domain.documentation import TechnicalDoc
+from doc_scribe.domain.enums import ModelName
+from doc_scribe.io.code_loader import CodebaseLoader
+from doc_scribe.io.markdown import read_md
+from doc_scribe.prompts.system_prompt import (
     CODE_ANALYSIS_PROMPT,
     WRITER_SYSTEM_PROMPT,
 )
-from code_analyzer.settings import Settings
-from code_analyzer.writer.generator import (
+from doc_scribe.settings import Settings
+from doc_scribe.writer.generator import (
     generate_code_analysis,
     generate_high_level_documentation,
     write_code_analysis,
@@ -75,7 +75,7 @@ def generate_documentation(project_root: str) -> None:
 
     code_analyzer = create_structured_agent(llm, settings, prompt=CODE_ANALYSIS_PROMPT)
 
-    # Top module level docs
+    # Module-level code analysis, consisting of summary, analysis and usage info for each top module
     module_tree = loader.load_all_modules()
     module_docs = generate_code_analysis(
         code_tree=module_tree,
@@ -85,14 +85,14 @@ def generate_documentation(project_root: str) -> None:
 
     tree = loader.load_all_files()
     if len(tree) < settings.max_file_count:
-        # File level docs, to be used as chunks and in plato docs (low level section)
+        # File-level code analysis, consisting of summary, analysis and usage info for each file
         file_docs = generate_code_analysis(
             code_tree=tree,
             agent=code_analyzer,
             filepath=Path(root.name) / "file_level_analysis",
         )
 
-        # Overall tech docs, to be used in plato docs (mid level section)
+        # Integrate module and file docs into a comprehensive documentation, trying to avoid redundancy
         final_doc = write_code_analysis(
             file_docs=file_docs,
             module_docs=module_docs,
@@ -104,7 +104,7 @@ def generate_documentation(project_root: str) -> None:
         logger.info("Found %d files in the project: file level analysis skipped", len(tree))
         final_doc = read_md(filepath=Path(root.name) / "module_level_analysis")
 
-    # Overall docs, to be used in plato docs (high level section)
+    # High level documentation of the whole codebase, using the previous code analysis as source
     writer = create_str_agent(llm, settings, prompt=WRITER_SYSTEM_PROMPT)
     generate_high_level_documentation(
         documentation=final_doc,
@@ -114,6 +114,6 @@ def generate_documentation(project_root: str) -> None:
 
 
 if __name__ == "__main__":
-    # Requires path to main module in a project (e.g. chat-api/chat_api)
+    # Requires path to main module in a project
     param = sys.argv[1]
     generate_documentation(param)

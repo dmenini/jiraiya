@@ -1,15 +1,23 @@
-# Code Analyzer
+# Doc Scribe
+
+`doc-scribe` is an intelligent documentation tool that transforms code analysis into structured, developer-friendly
+documentation. Powered by LLMs, it automatically extracts insights from your codebase, generating high-quality
+documentation at multiple levels:
+
+* Module-Level Analysis – Understand the architecture and high-level design.
+* File-Level Insights – Capture granular details for deeper understanding.
+* Comprehensive Tech Docs – Generate well-structured documentation for your team.
+
+* Whether you're working with small projects or large-scale applications, `doc-scribe` ensures that your documentation
+  remains up-to-date, accurate, and useful—without the manual effort.
+
+**Turn your code into clear, maintainable documentation with doc-scribe.**
 
 ## Local Development
 
 ### Prerequisites
 
-1. Export the Artifactory credentials as env variables:
-   ```bash
-   export POETRY_HTTP_BASIC_ARTIFACTORY_USERNAME=$PLATO_ARTIFACTORY_CREDENTIALS_USR
-   export POETRY_HTTP_BASIC_ARTIFACTORY_PASSWORD=$PLATO_ARTIFACTORY_CREDENTIALS_PSW
-   ```
-2. Run `make install` to install the developments requirements (including runtime requirements).
+Run `make install` to install the developments requirements (including runtime requirements).
 
 ### Run Service Locally
 
