@@ -28,7 +28,7 @@ def loader(temp_codebase: Path) -> CodebaseLoader:
 
 
 def test_get_all_files(loader: CodebaseLoader, temp_codebase: Path) -> None:
-    files = loader._get_all_files()
+    files = loader._get_file_paths()
     expected_files = {
         temp_codebase / "module1" / "file1.py",
         temp_codebase / "module2" / "file2.py",

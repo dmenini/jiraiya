@@ -28,4 +28,4 @@ if [[ -z "$AWS_SESSION_TOKEN" ]]; then
 fi
 
 echo "Starting analysis of project $project_path"
-python -m code_analyzer.main "${project_path}"
+python -m doc_scribe.main "${project_path}"

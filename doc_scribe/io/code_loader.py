@@ -1,7 +1,7 @@
 from collections import defaultdict
 from pathlib import Path
 
-ALLOWED_EXTENSIONS = [".py", ".kt"]
+ALLOWED_EXTENSIONS = [".py", ".kt", ".ts", ".vue"]
 
 
 class CodebaseLoader:
@@ -10,13 +10,14 @@ class CodebaseLoader:
         self.exclude = exclude or []
         self.include = include or []
 
-    def _get_all_files(self) -> list[Path]:
+    def _get_file_paths(self) -> list[Path]:
         """Recursively finds all Python files in the given directory."""
         if self.root_path.is_file() and self.root_path.suffix in ALLOWED_EXTENSIONS:
             return [self.root_path]
 
         all_files = [file for ext in ALLOWED_EXTENSIONS for file in self.root_path.rglob("*" + ext)]
-        return sorted(all_files)
+        relevant = [file for file in all_files if self._is_included(file) and not self._is_excluded(file)]
+        return sorted(relevant)
 
     def load_file(self, file_path: Path) -> str:
         with file_path.open("r", encoding="utf-8") as f:
@@ -24,19 +25,18 @@ class CodebaseLoader:
         return code
 
     def load_all_files(self) -> dict[str, str]:
-        python_files = self._get_all_files()
+        python_files = self._get_file_paths()
 
         tree = {}
         for file in python_files:
             relative_path = file.relative_to(self.root_path)  # Preserve structure
-            if self._is_included(relative_path) and not self._is_excluded(relative_path):
-                code = self.load_file(file)
-                if code.strip():
-                    tree[str(relative_path)] = code
+            code = self.load_file(file)
+            if code.strip():
+                tree[str(relative_path)] = code
         return tree
 
     def load_all_modules(self, file_separator: str = "\n\n") -> dict[str, str]:
-        filepaths = self._get_all_files()
+        filepaths = self._get_file_paths()
         top_modules = set()
 
         for path in filepaths:
@@ -65,7 +65,7 @@ class CodebaseLoader:
     def _is_included(self, file: Path) -> bool:
         if not self.include:
             return True
-        return any(str(file).startswith(inc) for inc in self.include)
+        return any(inc in file.parts for inc in self.include)
 
     def _is_excluded(self, file: Path) -> bool:
-        return any(str(file).startswith(exc) for exc in self.exclude)
+        return any(exc in file.parts for exc in self.exclude)

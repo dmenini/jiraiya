@@ -66,21 +66,24 @@ def create_structured_agent(llm: Model, settings: Settings, prompt: str) -> Agen
     )
 
 
-def generate_documentation(project_root: str) -> None:
+def generate_documentation(project_root: str, project_name: str | None = None) -> None:
     settings = Settings()
     llm = create_llm(settings, ModelName.CLAUDE_3_5_SONNET)
 
     root = Path(project_root)
-    loader = CodebaseLoader(root_path=root)
+    project_name = project_name or root.name
+    loader = CodebaseLoader(root_path=root, exclude=[])
 
     code_analyzer = create_structured_agent(llm, settings, prompt=CODE_ANALYSIS_PROMPT)
 
     # Module-level code analysis, consisting of summary, analysis and usage info for each top module
     module_tree = loader.load_all_modules()
+    logger.info("Will proceed to analyse the following modules: %s", module_tree.keys())
+
     module_docs = generate_code_analysis(
         code_tree=module_tree,
         agent=code_analyzer,
-        filepath=Path(root.name) / "module_level_analysis",
+        filepath=Path(project_name) / "module_level_analysis",
     )
 
     tree = loader.load_all_files()
@@ -89,27 +92,27 @@ def generate_documentation(project_root: str) -> None:
         file_docs = generate_code_analysis(
             code_tree=tree,
             agent=code_analyzer,
-            filepath=Path(root.name) / "file_level_analysis",
+            filepath=Path(project_name) / "file_level_analysis",
         )
 
         # Integrate module and file docs into a comprehensive documentation, trying to avoid redundancy
         final_doc = write_code_analysis(
             file_docs=file_docs,
             module_docs=module_docs,
-            filepath=Path(root.name) / "code_analysis",
+            filepath=Path(project_name) / "code_analysis",
         )
 
     else:
         # In case of too many files we simply use the module analysis
         logger.info("Found %d files in the project: file level analysis skipped", len(tree))
-        final_doc = read_md(filepath=Path(root.name) / "module_level_analysis")
+        final_doc = read_md(filepath=Path(project_name) / "module_level_analysis")
 
     # High level documentation of the whole codebase, using the previous code analysis as source
     writer = create_str_agent(llm, settings, prompt=WRITER_SYSTEM_PROMPT)
     generate_high_level_documentation(
         documentation=final_doc,
         agent=writer,
-        filepath=Path(root.name) / "high_level_documentation",
+        filepath=Path(project_name) / "high_level_documentation",
     )
 
 
