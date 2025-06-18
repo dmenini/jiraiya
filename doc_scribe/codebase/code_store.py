@@ -8,8 +8,10 @@ from qdrant_client.http import models as qdrant_models
 from qdrant_client.http.models import Distance, OptimizersConfigDiff, ScoredPoint, VectorParams
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
-from doc_scribe.domain.code_data import ClassData, CodeData, MethodData
-from doc_scribe.encoder.base import Embeddings
+from doc_scribe.domain.code_data import ClassData, CodeData, MethodData, ReferenceData
+from doc_scribe.domain.enums import EncoderName
+from doc_scribe.encoder.cohere import CohereEmbeddings
+from doc_scribe.encoder.titan import TitanEmbeddings
 
 NAMESPACE_UUID = uuid.UUID(int=1984)  # do not change or the hashes will be different
 
@@ -34,9 +36,15 @@ def calculate_id(content: str, source: str) -> str:
     return str(hash_string_to_uuid(content_hash + source_hash))
 
 
+encoder_map = {
+    EncoderName.COHERE_V3: CohereEmbeddings,
+    EncoderName.TITAN_V1: TitanEmbeddings,
+}
+
+
 class CodebaseStore:
-    def __init__(self, tenant: str, encoder: Embeddings, host: str = "localhost", port: int = 6333) -> None:
-        self.encoder = encoder
+    def __init__(self, tenant: str, encoder: EncoderName, host: str = "localhost", port: int = 6333) -> None:
+        self.encoder = encoder_map[encoder](model=encoder, normalize=True)
         self.tenant = tenant
         self.qdrant = QdrantClient(host=host, port=port)
 
@@ -68,6 +76,10 @@ class CodebaseStore:
         point = PointStruct(id=doc_id, vector=vector, payload={"text": text, **metadata})
         self.qdrant.upsert(collection_name=collection, points=[point])
 
+    def clear(self) -> None:
+        self.qdrant.delete_collection(collection_name=self.class_collection)
+        self.qdrant.delete_collection(collection_name=self.method_collection)
+
     def _build_filter(self, **filters: Any) -> Filter | None:
         return (
             Filter(must=[FieldCondition(key=key, match=MatchValue(value=value)) for key, value in filters.items()])
@@ -83,7 +95,7 @@ class CodebaseStore:
         vector = self.encoder.embed_query(query)
 
         result = self.qdrant.query_points(
-            collection_name=collection, query_vector=vector, limit=top_k, query_filter=query_filter
+            collection_name=collection, query=vector, limit=top_k, query_filter=query_filter,
         )
 
         return [self._parse_hit(hit, is_class=is_class) for hit in result.points]
@@ -106,7 +118,7 @@ class CodebaseStore:
             with_payload=True,
             with_vectors=False,
             search_params=qdrant_models.SearchParams(hnsw_ef=128, exact=False),
-            keyword=keyword,  # This only works if Qdrant is configured for full-text indexing
+            keyword=keyword,
         )
 
         return [self._parse_hit(hit, is_class=is_class) for hit in result.points]
@@ -114,7 +126,6 @@ class CodebaseStore:
     def hybrid_search(
         self,
         query: str,
-        keyword: str,
         *,
         alpha: float = 0.5,
         top_k: int = 5,
@@ -128,18 +139,16 @@ class CodebaseStore:
 
         result = self.qdrant.query_points(
             collection_name=collection,
-            query_vector=vector,
+            query=vector,
             limit=top_k,
             query_filter=query_filter,
             with_payload=True,
             with_vectors=False,
             score_threshold=None,
             search_params=qdrant_models.SearchParams(hnsw_ef=128, exact=False),
-            keyword=keyword,
+            keyword=query,
             using="hybrid",
-            with_score=True,
             offset=0,
-            score_cutoff=None,
             rerank=alpha,  # Alpha blending between embedding and keyword similarity
         )
 
@@ -148,7 +157,8 @@ class CodebaseStore:
     def _parse_hit(self, hit: ScoredPoint, *, is_class: bool = True) -> tuple[CodeData, float]:
         payload = hit.payload
         refs = json.loads(payload.pop("references", "[]"))
-        payload["references"] = [MethodData.model_validate(ref) for ref in refs]
+        payload["references"] = [ReferenceData.model_validate(ref) for ref in refs]
+        payload["source_code"] = payload.pop("text", "")
 
         model_cls = ClassData if is_class else MethodData
         return model_cls.model_validate(payload), hit.score

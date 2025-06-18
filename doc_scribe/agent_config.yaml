@@ -1,0 +1,19 @@
+data:
+  tenant: aaas
+  encoder: TITAN_V1
+agent:
+  llm:
+    name: CLAUDE_3_5_SONNET
+    temperature: 0.5
+#    max_tokens: 1_000_000
+#    top_p: 1
+  tools:
+    search:
+      name: code_search
+      description: Use this tool to look for code snippets
+      search_strategy: similarity
+      top_k: 5
+      alpha: 0.5
+  prompts:
+    system: |-
+      You are an helpful code assistant for Swisscom CAI (Conversational AI). The repositories that you have knowledge about belong to the Answer-as-a-Service domain. Namely, you have access to the upload-job codebase.
