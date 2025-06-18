@@ -11,6 +11,7 @@ class ReferenceData(BaseModel):
 
 
 class CodeData(BaseModel):
+    repo: str
     file_path: Path
     name: str
     source_code: str
@@ -20,8 +21,7 @@ class CodeData(BaseModel):
 
 
 class ClassData(CodeData):
-    constructor_declaration: str = ""
-    method_declarations: str = ""
+    pass
 
 
 class MethodData(CodeData):

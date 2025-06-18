@@ -43,9 +43,11 @@ class Embeddings:
                     len(text),
                     self.model.max_chars,
                 )
-                text = text[: self.model.max_chars]
+                cropped = text[: self.model.max_chars]
+                emb = self._embed_document(cropped)
+            else:
+                emb = self._embed_document(text)
 
-            emb = self._embed_document(text)
             embeddings.append(emb)
 
         if self.normalize:

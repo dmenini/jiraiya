@@ -59,4 +59,12 @@ build:  # ci
 run:
 	$(UV) run ./run.sh
 
-.PHONY: install clean-install test lint format test-lint test-coverage test-format unit-test build run
+start-qdrant:
+	docker run -d -p 6333:6333 -p 6334:6334 \
+		-v "$(pwd)/qdrant_storage:/qdrant/storage:z" \
+		qdrant/qdrant
+
+stop-qdrant:
+	docker stop qdrant
+
+.PHONY: install clean-install test lint format test-lint test-coverage test-format unit-test build run start-qdrant

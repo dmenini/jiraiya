@@ -7,7 +7,7 @@ from typing import ClassVar
 
 from pathspec import PathSpec
 from tree_sitter import Node
-from tree_sitter_language_pack import get_parser, SupportedLanguage
+from tree_sitter_language_pack import SupportedLanguage, get_parser
 
 from doc_scribe.domain.code_data import ClassData, MethodData, ReferenceData
 
@@ -49,7 +49,9 @@ class CodeParser:
 
     def __init__(self, codebase_path: Path, *, blacklist: list | None = None, preload: bool = True) -> None:
         self.codebase_path = codebase_path
+        self.repo = codebase_path.name
         self.blacklist = (blacklist or []) + BLACKLIST
+
         if preload:
             self.source_files = self.load_files(codebase_path)
         else:
@@ -85,7 +87,7 @@ class CodeParser:
             return True
 
         # Rule 3: skip if ignored by .gitignore
-        if spec and spec.match_file(rel_str):
+        if spec and spec.match_file(rel_str):  # noqa: SIM103
             return False
 
         return True
@@ -135,9 +137,10 @@ class CodeParser:
     def _process_class_nodes(self, class_nodes: list[Node], file_path: Path, code: str) -> list[ClassData]:
         return [
             ClassData(
+                repo=self.repo,
                 file_path=file_path.relative_to(self.codebase_path),
                 name=class_node.child_by_field_name("name").text.decode(),
-                source_code=code[class_node.start_byte: class_node.end_byte],
+                source_code=code[class_node.start_byte : class_node.end_byte],
                 docstring=self._extract_docstring(class_node, code),
             )
             for class_node in class_nodes
@@ -151,9 +154,10 @@ class CodeParser:
                 method_name = name_node.text.decode()
                 processed.append(
                     MethodData(
+                        repo=self.repo,
                         file_path=file_path.relative_to(self.codebase_path),
                         name=method_name,
-                        source_code=code[method_node.start_byte: method_node.end_byte],
+                        source_code=code[method_node.start_byte : method_node.end_byte],
                         docstring=self._extract_docstring(method_node, code),
                     )
                 )
@@ -167,7 +171,7 @@ class CodeParser:
                 if child.type == "expression_statement" and child.children:
                     expr = child.children[0]
                     if expr.type == "string":
-                        raw_docstring = code[expr.start_byte: expr.end_byte]
+                        raw_docstring = code[expr.start_byte : expr.end_byte]
                         return ast.literal_eval(raw_docstring)  # Unescape Python string
         return ""
 
@@ -191,7 +195,7 @@ class CodeParser:
                     if node.type != "identifier":
                         continue  # Skip early
 
-                    name = code_bytes[node.start_byte: node.end_byte].decode("utf-8")
+                    name = code_bytes[node.start_byte : node.end_byte].decode("utf-8")
                     parent_type = parent.type
 
                     ref_type = None
@@ -203,7 +207,7 @@ class CodeParser:
                     if ref_type is None:
                         continue
 
-                    reference_text = code_bytes[parent.start_byte: parent.end_byte].decode("utf-8")
+                    reference_text = code_bytes[parent.start_byte : parent.end_byte].decode("utf-8")
                     reference = ReferenceData(
                         file=file_path,
                         line=node.start_point[0] + 1,
