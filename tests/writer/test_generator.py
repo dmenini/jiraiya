@@ -74,10 +74,13 @@ def test_generate_high_level_documentation(str_agent: Agent[None, str], mocker: 
     mocker.patch("doc_scribe.writer.generator.write_md")
 
     result = generate_high_level_documentation(
-        agent=str_agent, documentation="mock documentation", filepath=mock_filepath, sections=[
+        agent=str_agent,
+        documentation="mock documentation",
+        filepath=mock_filepath,
+        sections=[
             {"title": "1. Summary", "template": ""},
             {"title": "2. Architecture Overview", "template": ""},
-        ]
+        ],
     )
 
     assert result == (
