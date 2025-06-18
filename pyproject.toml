@@ -1,33 +1,33 @@
-[tool.poetry]
+[project]
 name = "doc-scribe"
 version = "0.1.0"
 description = ""
 authors = ["dmenini"]
 readme = "README.md"
 
-[tool.poetry.dependencies]
-python = "^3.13"
-anthropic = "0.40.0"
-boto3 = "1.35.74"
-pydantic = "2.10.6"
-pydantic-ai = "0.0.22"
-pydantic-settings = "2.7.1"
-astpretty = "3.0.0"
+requires-python = ">=3.13"
 
-[tool.poetry.group.dev.dependencies]
-coverage = "7.6.10"
-moto = "5.0.28"
-mypy = "1.14.1"
-pytest = "8.3.4"
-pytest-asyncio = "0.25.3"
-pytest-cov = "6.0.0"
-pytest-httpx = "0.35.0"
-pytest-mock = "3.14.0"
-ruff = "0.9.4"
+dependencies = [
+    "httpx==0.28.1",
+    "anthropic==0.54.0",
+    "boto3==1.38.38",
+    "pydantic==2.11.7",
+    "pydantic-ai==0.3.1",
+    "pydantic-settings==2.9.1",
+    "astpretty==3.0.0"
+]
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[dependency-groups]
+dev = [
+    "coverage==7.6.4",
+    "mypy==1.16.1",
+    "pytest==8.4.1",
+    "pytest-cov==6.2.1",
+    "pytest-asyncio==0.24.0",
+    "pytest-httpx==0.35.0",
+    "pytest-mock==3.14.1",
+    "ruff==0.7.3",
+]
 
 [tool.ruff]
 line-length = 120
@@ -47,11 +47,6 @@ ignore = [
     "ISC001", # Allows concatenated string literals on one line (must be disabled to avoid conflicts with formatter)
     "B008", # Do not perform function call in argument defaults -> Ignore because of fastapi.Depends usage
     "FA102", # `from __future__ import` annotations are not neeeded with python3.12
-    "RET504", # Allow assignements of variable to return
-    "EM101", # Allow exception to use a string literal
-    "TRY003", # Allow specifying messages outside the exception class
-    "ARG002", # Allow unused method argument (e.g. when inheriting from base classes)
-    "TRY301", # Allow abstract `raise` to an inner function
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -59,16 +54,7 @@ ignore = [
     "S101", # Asserts are allowed in tests
     "ARG", # Unused function args -> Fixtures are functionally relevant
     "FBT", # Don't care about booleans as positional arguments in tests, e.g. via @pytest.mark.parametrize()
-    "S105", # Ignore possible hardcoded password for fake values
-    "SLF001", # Ignore private member accessed
 ]
-"integration_tests/**/*.py" = [
-    "S101", # Asserts are allowed in tests
-    "ARG", # Unused function args -> Fixtures are functionally relevant
-]
-
-[tool.ruff.format]
-quote-style = "double"
 
 [tool.mypy]
 ignore_missing_imports = "True"
@@ -81,4 +67,4 @@ module = "tests.*"
 disable_error_code = ["method-assign", "attr-defined"]
 
 [tool.coverage.run]
-omit = ["tests/*", "integration_tests/*"]
+omit = ["tests/*"]
