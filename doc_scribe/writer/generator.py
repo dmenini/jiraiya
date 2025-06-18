@@ -5,22 +5,13 @@ from pydantic_ai.agent import Agent
 
 from doc_scribe.domain.documentation import TechnicalDoc
 from doc_scribe.io.markdown import read_json, write_json_as_md, write_md
-from doc_scribe.prompts.system_prompt import (
-    ARCHITECTURE_PROMPT,
-    CONCERNS_PROMPT,
-    DATA_FLOW_PROMPT,
-    MODULES_PROMPT,
-    SECURITY_PROMPT,
-    SUMMARY_PROMPT,
-)
 
 logger = logging.getLogger(__name__)
 
 
 def generate_docs_for_file(code: str, writer: Agent[None, TechnicalDoc]) -> TechnicalDoc:
     response = writer.run_sync(user_prompt=code)
-    documentation = response.data
-    return documentation
+    return response.output
 
 
 def generate_code_analysis(
@@ -81,30 +72,24 @@ def _remove_before_start_and_after_end(text: str) -> str:
     return text
 
 
-def generate_high_level_documentation(agent: Agent[None, str], documentation: str, filepath: Path) -> str:
+def generate_high_level_documentation(
+    agent: Agent[None, str], documentation: str, filepath: Path, sections: list[dict]
+) -> str:
     project_name = filepath.parts[0]
-
-    sections = {
-        "1. Summary": SUMMARY_PROMPT,
-        "2. Architecture Overview": ARCHITECTURE_PROMPT,
-        "3. Data Flow": DATA_FLOW_PROMPT,
-        "4. Security Concerns": SECURITY_PROMPT,
-        "5. Key Modules & Responsibilities": MODULES_PROMPT,
-        "6. Cross Cutting Concerns": CONCERNS_PROMPT,
-    }
 
     name = project_name.replace("_", " ").title()
     hl_documentation = f"# {name} Documentation\n\n"
-    for section, template in sections.items():
-        user_prompt = template.format(documentation=documentation)
+    for section in sections:
+        title = section["title"]
+        user_prompt = section["template"].format(documentation=documentation)
         response = agent.run_sync(user_prompt=user_prompt)
-        result = response.data
+        result = response.output
 
         # Postprocess the result
         section_doc = _remove_before_start_and_after_end(result)
         section_doc = section_doc.strip("\n")
 
-        hl_documentation += f"## {section}\n\n{section_doc}\n\n"
+        hl_documentation += f"## {title}\n\n{section_doc}\n\n"
 
     write_md(hl_documentation, filepath=filepath)
 

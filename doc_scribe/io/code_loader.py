@@ -21,8 +21,7 @@ class CodebaseLoader:
 
     def load_file(self, file_path: Path) -> str:
         with file_path.open("r", encoding="utf-8") as f:
-            code = f.read()
-        return code
+            return f.read()
 
     def load_all_files(self) -> dict[str, str]:
         python_files = self._get_file_paths()

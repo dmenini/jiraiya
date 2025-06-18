@@ -11,7 +11,7 @@ class ModelName(Enum):
         self._bedrock_id = bedrock_id
 
     @property
-    def value(self) -> str:
+    def value(self) -> str:  # type: ignore[override]
         return self._name
 
     @property

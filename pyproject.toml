@@ -14,7 +14,8 @@ dependencies = [
     "pydantic==2.11.7",
     "pydantic-ai==0.3.1",
     "pydantic-settings==2.9.1",
-    "astpretty==3.0.0"
+    "astpretty==3.0.0",
+    "pyyaml==6.0.2",
 ]
 
 [dependency-groups]
@@ -54,6 +55,7 @@ ignore = [
     "S101", # Asserts are allowed in tests
     "ARG", # Unused function args -> Fixtures are functionally relevant
     "FBT", # Don't care about booleans as positional arguments in tests, e.g. via @pytest.mark.parametrize()
+    "SLF001",
 ]
 
 [tool.mypy]

@@ -47,22 +47,18 @@ def test_generate_code_analysis(structured_agent: Agent[None, TechnicalDoc], moc
 
 
 def test_write_code_analysis(mocker: MockerFixture) -> None:
-    doc = TechnicalDoc(summary="a", analysis="a", usage="a")
-    mock_file_docs = {"file1.py": doc, "file2.py": doc}
-    mock_module_docs = {"module": doc}
+    documentation = TechnicalDoc(summary="a", analysis="a", usage="a")
+    mock_file_docs = {"file1.py": documentation, "file2.py": documentation}
+    mock_module_docs = {"module": documentation}
     mock_path = Path("mock_project/docs.md")
-
-    for doc in mock_file_docs.values():
-        doc.to_markdown.return_value = "# File Doc\n"
-    for doc in mock_module_docs.values():
-        doc.to_markdown.return_value = "# Module Doc\n"
 
     mocker.patch("doc_scribe.writer.generator.write_md")
 
     result = write_code_analysis(file_docs=mock_file_docs, module_docs=mock_module_docs, filepath=mock_path)
 
-    assert "# File Doc" in result
-    assert "# Module Doc" in result
+    assert "## Module: file1" in result
+    assert "## Module: file2" in result
+    assert "## Module: module" in result
 
 
 def test_remove_before_start_and_after_end() -> None:
@@ -78,7 +74,10 @@ def test_generate_high_level_documentation(str_agent: Agent[None, str], mocker: 
     mocker.patch("doc_scribe.writer.generator.write_md")
 
     result = generate_high_level_documentation(
-        agent=str_agent, documentation="mock documentation", filepath=mock_filepath
+        agent=str_agent, documentation="mock documentation", filepath=mock_filepath, sections=[
+            {"title": "1. Summary", "template": ""},
+            {"title": "2. Architecture Overview", "template": ""},
+        ]
     )
 
     assert result == (
@@ -86,13 +85,5 @@ def test_generate_high_level_documentation(str_agent: Agent[None, str], mocker: 
         "## 1. Summary\n\n"
         "success (no tool calls)\n\n"
         "## 2. Architecture Overview\n\n"
-        "success (no tool calls)\n\n"
-        "## 3. Data Flow\n\n"
-        "success (no tool calls)\n\n"
-        "## 4. Security Concerns\n\n"
-        "success (no tool calls)\n\n"
-        "## 5. Key Modules & Responsibilities\n\n"
-        "success (no tool calls)\n\n"
-        "## 6. Cross Cutting Concerns\n\n"
         "success (no tool calls)\n\n"
     )
