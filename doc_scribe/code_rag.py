@@ -6,10 +6,10 @@ from pydantic_ai import Agent, Tool
 from pydantic_ai.models import ModelSettings
 
 from doc_scribe.agent.tools import ToolContext, code_search
-from doc_scribe.codebase.code_store import CodebaseStore
 from doc_scribe.domain.config import AgentConfig, Config, LLMConfig
 from doc_scribe.domain.enums import EncoderName, ModelName
 from doc_scribe.settings import Settings
+from doc_scribe.store.vectore_store import VectorStore
 
 logger = logging.getLogger()
 logging.basicConfig(level=logging.INFO)
@@ -44,9 +44,11 @@ with config_path.open() as fp:
 
 config = Config.model_validate(config)
 encoder = EncoderName[config.data.encoder]
-vectorstore = CodebaseStore(
+vectorstore = VectorStore(
     tenant=config.data.tenant,
-    encoder=encoder,
+    dense_encoder=EncoderName[config.data.dense_encoder],
+    bm25_encoder=config.data.bm25_encoder,
+    late_encoder=config.data.late_encoder,
     host=settings.qdrant_host,
     port=settings.qdrant_port,
 )

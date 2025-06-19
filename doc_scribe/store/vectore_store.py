@@ -43,11 +43,19 @@ encoder_map = {
 }
 
 
-class CodebaseStore:
-    def __init__(self, tenant: str, encoder: EncoderName, host: str = "localhost", port: int = 6333) -> None:
-        self.dense_encoder = encoder_map[encoder](model=encoder, normalize=True)
-        self.bm25_encoder = SparseTextEmbedding("Qdrant/bm25")
-        self.late_encoder = LateInteractionTextEmbedding("colbert-ir/colbertv2.0")
+class VectorStore:
+    def __init__(
+        self,
+        tenant: str,
+        dense_encoder: EncoderName,
+        bm25_encoder: str,
+        late_encoder: str,
+        host: str = "localhost",
+        port: int = 6333,
+    ) -> None:
+        self.dense_encoder = encoder_map[dense_encoder](model=dense_encoder, normalize=True)
+        self.bm25_encoder = SparseTextEmbedding(bm25_encoder)
+        self.late_encoder = LateInteractionTextEmbedding(late_encoder)
 
         self.tenant = tenant
         self.qdrant = QdrantClient(host=host, port=port)
@@ -82,8 +90,8 @@ class CodebaseStore:
     def add(self, data: CodeData) -> None:
         text = data.source_code
         dense_embedding = self.dense_encoder.embed_documents([text])[0]
-        bm25_embedding = list(self.bm25_encoder.embed(text))[0]
-        rerank_embedding = list(self.late_encoder.embed(text))[0]
+        bm25_embedding = next(self.bm25_encoder.embed(text))
+        rerank_embedding = next(self.late_encoder.embed(text))
 
         metadata = data.model_dump(exclude={"source_code", "references"}, mode="json")
         metadata["references"] = json.dumps([ref.model_dump(mode="json") for ref in data.references])

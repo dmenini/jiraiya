@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import RunContext
 
-from doc_scribe.codebase.code_store import CodebaseStore
+from doc_scribe.store.vectore_store import VectorStore
 
 
 class CodeSearchArgs(BaseModel):
@@ -19,7 +19,7 @@ class SearchResult(BaseModel):
 class ToolContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    vectorstore: CodebaseStore
+    vectorstore: VectorStore
     search_strategy: Literal["hybrid", "similarity", "keyword"]
     top_k: int = 5
     high_level: bool = True

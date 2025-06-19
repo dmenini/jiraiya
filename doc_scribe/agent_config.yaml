@@ -1,6 +1,14 @@
 data:
   tenant: aaas
-  encoder: TITAN_V1
+  dense_encoder: TITAN_V1
+  bm25_encoder: Qdrant/bm25
+  late_encoder: jinaai/jina-colbert-v2
+  codebases:
+    - /Users/taamedag/Desktop/cai/aaas/upload-job/
+  blacklist:
+    - tests
+    - integration_tests
+    - cicd
 agent:
   retries: 3
   llm:

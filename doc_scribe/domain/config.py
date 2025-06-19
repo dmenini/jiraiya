@@ -3,7 +3,11 @@ from pydantic import BaseModel
 
 class DataConfig(BaseModel):
     tenant: str
-    encoder: str
+    dense_encoder: str
+    bm25_encoder: str
+    late_encoder: str
+    codebases: list[str]
+    blacklist: list[str]
 
 
 class ToolConfig(BaseModel):

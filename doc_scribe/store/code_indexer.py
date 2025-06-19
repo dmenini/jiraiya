@@ -3,8 +3,8 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from doc_scribe.codebase.code_store import CodebaseStore
 from doc_scribe.domain.code_data import ClassData, MethodData
+from doc_scribe.store.vectore_store import VectorStore
 
 log = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ class CodebaseIndexer:
         codebase_path: Path,
         class_data: list[ClassData],
         method_data: list[MethodData],
-        repository: CodebaseStore,
+        repository: VectorStore,
     ) -> None:
         self.codebase_path = codebase_path.resolve()
         self.codebase_folder_name = self.codebase_path.name
