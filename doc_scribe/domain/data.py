@@ -26,3 +26,10 @@ class ClassData(CodeData):
 
 class MethodData(CodeData):
     pass
+
+
+class TextData(BaseModel):
+    source: str
+    title: str
+    content: str
+    language: str = ""

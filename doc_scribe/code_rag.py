@@ -9,7 +9,7 @@ from doc_scribe.agent.tools import ToolContext, code_search
 from doc_scribe.domain.config import AgentConfig, Config, LLMConfig
 from doc_scribe.domain.enums import EncoderName, ModelName
 from doc_scribe.settings import Settings
-from doc_scribe.store.vectore_store import VectorStore
+from doc_scribe.code.vectore_store import CodeVectorStore
 
 logger = logging.getLogger()
 logging.basicConfig(level=logging.INFO)
@@ -41,12 +41,12 @@ settings = Settings()
 config_path = Path(__file__).parent / "agent_config.yaml"
 with config_path.open() as fp:
     config = yaml.safe_load(fp)
+    config = Config.model_validate(config)
 
-config = Config.model_validate(config)
 encoder = EncoderName[config.data.encoder]
-vectorstore = VectorStore(
+vectorstore = CodeVectorStore(
     tenant=config.data.tenant,
-    dense_encoder=EncoderName[config.data.dense_encoder],
+    dense_encoder=config.data.dense_encoder,
     bm25_encoder=config.data.bm25_encoder,
     late_encoder=config.data.late_encoder,
     host=settings.qdrant_host,

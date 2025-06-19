@@ -6,13 +6,11 @@ from typing import Any
 from fastembed import LateInteractionTextEmbedding, SparseTextEmbedding
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qdrant_models
-from qdrant_client.http.models import ScoredPoint, models
+from qdrant_client.http.models import models, ScoredPoint
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
-from doc_scribe.domain.code_data import ClassData, CodeData, MethodData, ReferenceData
-from doc_scribe.domain.enums import EncoderName
-from doc_scribe.encoder.cohere import CohereEmbeddings
-from doc_scribe.encoder.titan import TitanEmbeddings
+from doc_scribe.domain.data import ClassData, CodeData, MethodData, ReferenceData
+from doc_scribe.encoder.bedrock import BedrockEmbeddings
 
 NAMESPACE_UUID = uuid.UUID(int=1984)  # do not change or the hashes will be different
 
@@ -37,23 +35,17 @@ def calculate_id(content: str, source: str) -> str:
     return str(hash_string_to_uuid(content_hash + source_hash))
 
 
-encoder_map = {
-    EncoderName.COHERE_V3: CohereEmbeddings,
-    EncoderName.TITAN_V1: TitanEmbeddings,
-}
-
-
-class VectorStore:
+class CodeVectorStore:
     def __init__(
         self,
         tenant: str,
-        dense_encoder: EncoderName,
+        dense_encoder: str,
         bm25_encoder: str,
         late_encoder: str,
         host: str = "localhost",
         port: int = 6333,
     ) -> None:
-        self.dense_encoder = encoder_map[dense_encoder](model=dense_encoder, normalize=True)
+        self.dense_encoder = BedrockEmbeddings(dense_encoder, normalize=True)
         self.bm25_encoder = SparseTextEmbedding(bm25_encoder)
         self.late_encoder = LateInteractionTextEmbedding(late_encoder)
 
@@ -89,9 +81,9 @@ class VectorStore:
 
     def add(self, data: CodeData) -> None:
         text = data.source_code
-        dense_embedding = self.dense_encoder.embed_documents([text])[0]
-        bm25_embedding = next(self.bm25_encoder.embed(text))
-        rerank_embedding = next(self.late_encoder.embed(text))
+        dense_embedding = next(self.dense_encoder.passage_embed([text]))
+        bm25_embedding = next(self.bm25_encoder.passage_embed([text]))
+        rerank_embedding = next(self.late_encoder.passage_embed([text]))
 
         metadata = data.model_dump(exclude={"source_code", "references"}, mode="json")
         metadata["references"] = json.dumps([ref.model_dump(mode="json") for ref in data.references])
@@ -113,6 +105,8 @@ class VectorStore:
     def clear(self) -> None:
         self.qdrant.delete_collection(collection_name=self.class_collection)
         self.qdrant.delete_collection(collection_name=self.method_collection)
+        self._ensure_collection(self.method_collection)
+        self._ensure_collection(self.class_collection)
 
     def _build_filter(self, **filters: Any) -> Filter | None:
         return (
@@ -126,7 +120,7 @@ class VectorStore:
     ) -> list[tuple[CodeData, float]]:
         collection = self.class_collection if is_class else self.method_collection
         query_filter = self._build_filter(**filters)
-        vector = self.dense_encoder.embed_query(query)
+        vector = self.dense_encoder.query_embed(query)
 
         result = self.qdrant.query_points(
             collection_name=collection,
@@ -174,7 +168,7 @@ class VectorStore:
         collection = self.class_collection if is_class else self.method_collection
         query_filter = self._build_filter(**filters)
 
-        dense_vector = self.dense_encoder.embed_query(query)
+        dense_vector = next(self.dense_encoder.query_embed(query))
         sparse_vectors = next(self.bm25_encoder.query_embed(query))
         late_vectors = next(self.late_encoder.query_embed(query))
 
@@ -211,3 +205,22 @@ class VectorStore:
 
         model_cls = ClassData if is_class else MethodData
         return model_cls.model_validate(payload), hit.score
+
+    def find(
+        self,
+        is_class: bool = True,
+        limit: int = 100,
+        **filters: Any,
+    ) -> list[CodeData]:
+        collection = self.class_collection if is_class else self.method_collection
+        query_filter = self._build_filter(**filters)
+
+        result = self.qdrant.query_points(
+            collection,
+            limit=limit,
+            with_vectors=False,
+            with_payload=True,
+            query_filter=query_filter,
+        )
+
+        return [self._parse_hit(hit, is_class=is_class)[0] for hit in result.points]

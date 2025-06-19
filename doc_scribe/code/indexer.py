@@ -3,19 +3,19 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from doc_scribe.domain.code_data import ClassData, MethodData
-from doc_scribe.store.vectore_store import VectorStore
+from doc_scribe.domain.data import ClassData, MethodData
+from doc_scribe.code.vectore_store import CodeVectorStore
 
 log = logging.getLogger(__name__)
 
 
-class CodebaseIndexer:
+class CodeBaseIndexer:
     def __init__(
         self,
         codebase_path: Path,
         class_data: list[ClassData],
         method_data: list[MethodData],
-        repository: VectorStore,
+        vectorstore: CodeVectorStore,
     ) -> None:
         self.codebase_path = codebase_path.resolve()
         self.codebase_folder_name = self.codebase_path.name
@@ -23,8 +23,7 @@ class CodebaseIndexer:
         self.class_data = class_data
         self.method_data = method_data
 
-        # Initialize ChromaDB
-        self.repository = repository
+        self.vectorstore = vectorstore
 
     def get_special_files(self) -> list[Path]:
         return list(self.codebase_path.rglob("*.md")) + list(self.codebase_path.rglob("*.sh"))
@@ -33,7 +32,7 @@ class CodebaseIndexer:
         # Embed and add to class collection
         all_data = self.class_data + self.method_data
         for data in tqdm(all_data, total=len(all_data)):
-            self.repository.add(data=data)
+            self.vectorstore.add(data=data)
 
         # Add markdown and shell files as class-like documents
         special_files = self.get_special_files()
@@ -44,6 +43,6 @@ class CodebaseIndexer:
                 content = file.read_text(encoding="utf-8")
                 text = md_template.format(file_path=file, content=content)
                 data = ClassData(repo=self.codebase_path.name, file_path=file, name=file.name, source_code=text)
-                self.repository.add(data=data)
+                self.vectorstore.add(data=data)
 
         log.info("Added %d documents to vector store", len(all_data) + len(special_files))

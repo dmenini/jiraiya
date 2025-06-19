@@ -7,13 +7,13 @@ from typing import ClassVar
 
 from pathspec import PathSpec
 from tree_sitter import Node
-from tree_sitter_language_pack import SupportedLanguage, get_parser
+from tree_sitter_language_pack import get_parser, SupportedLanguage
 
-from doc_scribe.domain.code_data import ClassData, MethodData, ReferenceData
+from doc_scribe.domain.data import ClassData, MethodData, ReferenceData
 
 log = logging.getLogger(__name__)
 
-WHITELIST_FILES = [".java", ".py", ".js", ".rs"]
+WHITELIST_FILES = [".java", ".py", ".js", ".rs", ".kt"]
 
 NODE_TYPES = {
     "python": {"class": "class_definition", "method": "function_definition"},
@@ -140,7 +140,7 @@ class CodeParser:
                 repo=self.repo,
                 file_path=file_path.relative_to(self.codebase_path),
                 name=class_node.child_by_field_name("name").text.decode(),
-                source_code=code[class_node.start_byte : class_node.end_byte],
+                source_code=code[class_node.start_byte: class_node.end_byte],
                 docstring=self._extract_docstring(class_node, code),
             )
             for class_node in class_nodes
@@ -157,7 +157,7 @@ class CodeParser:
                         repo=self.repo,
                         file_path=file_path.relative_to(self.codebase_path),
                         name=method_name,
-                        source_code=code[method_node.start_byte : method_node.end_byte],
+                        source_code=code[method_node.start_byte: method_node.end_byte],
                         docstring=self._extract_docstring(method_node, code),
                     )
                 )
@@ -171,7 +171,7 @@ class CodeParser:
                 if child.type == "expression_statement" and child.children:
                     expr = child.children[0]
                     if expr.type == "string":
-                        raw_docstring = code[expr.start_byte : expr.end_byte]
+                        raw_docstring = code[expr.start_byte: expr.end_byte]
                         return ast.literal_eval(raw_docstring)  # Unescape Python string
         return ""
 
@@ -195,7 +195,7 @@ class CodeParser:
                     if node.type != "identifier":
                         continue  # Skip early
 
-                    name = code_bytes[node.start_byte : node.end_byte].decode("utf-8")
+                    name = code_bytes[node.start_byte: node.end_byte].decode("utf-8")
                     parent_type = parent.type
 
                     ref_type = None
@@ -207,7 +207,7 @@ class CodeParser:
                     if ref_type is None:
                         continue
 
-                    reference_text = code_bytes[parent.start_byte : parent.end_byte].decode("utf-8")
+                    reference_text = code_bytes[parent.start_byte: parent.end_byte].decode("utf-8")
                     reference = ReferenceData(
                         file=file_path,
                         line=node.start_point[0] + 1,

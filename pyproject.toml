@@ -20,6 +20,8 @@ dependencies = [
     "qdrant-client==1.14.3",
     "spacy==3.8.7",
     "fastembed>=0.7.1",
+    "pandas>=2.3.0",
+    "plotly>=6.1.2",
 ]
 
 [dependency-groups]
