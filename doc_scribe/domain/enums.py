@@ -51,7 +51,7 @@ class EncoderName(Enum):
         return self._bedrock_id
 
     @property
-    def embeddings_size(self) -> int:
+    def embedding_size(self) -> int:
         """Number of dimensions for embedding vectors."""
         return self._embeddings_size
 

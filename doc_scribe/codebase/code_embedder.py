@@ -1,6 +1,8 @@
 import logging
 from pathlib import Path
 
+from tqdm import tqdm
+
 from doc_scribe.codebase.code_store import CodebaseStore
 from doc_scribe.domain.code_data import ClassData, MethodData
 
@@ -30,7 +32,7 @@ class CodebaseIndexer:
     def index(self) -> None:
         # Embed and add to class collection
         all_data = self.class_data + self.method_data
-        for data in all_data:
+        for data in tqdm(all_data, total=len(all_data)):
             self.repository.add(data=data)
 
         # Add markdown and shell files as class-like documents
@@ -38,7 +40,7 @@ class CodebaseIndexer:
         md_template = "File: {file_path}\n\nContent:\n{content}"
 
         if special_files:
-            for file in special_files:
+            for file in tqdm(special_files, total=len(special_files)):
                 content = file.read_text(encoding="utf-8")
                 text = md_template.format(file_path=file, content=content)
                 data = ClassData(repo=self.codebase_path.name, file_path=file, name=file.name, source_code=text)

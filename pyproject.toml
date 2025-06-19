@@ -19,6 +19,7 @@ dependencies = [
     "tree-sitter-language-pack==0.8.0",
     "qdrant-client==1.14.3",
     "spacy==3.8.7",
+    "fastembed>=0.7.1",
 ]
 
 [dependency-groups]

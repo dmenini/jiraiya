@@ -3,9 +3,10 @@ import json
 import uuid
 from typing import Any
 
+from fastembed import LateInteractionTextEmbedding, SparseTextEmbedding
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qdrant_models
-from qdrant_client.http.models import Distance, OptimizersConfigDiff, ScoredPoint, VectorParams
+from qdrant_client.http.models import ScoredPoint, models
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
 from doc_scribe.domain.code_data import ClassData, CodeData, MethodData, ReferenceData
@@ -44,7 +45,10 @@ encoder_map = {
 
 class CodebaseStore:
     def __init__(self, tenant: str, encoder: EncoderName, host: str = "localhost", port: int = 6333) -> None:
-        self.encoder = encoder_map[encoder](model=encoder, normalize=True)
+        self.dense_encoder = encoder_map[encoder](model=encoder, normalize=True)
+        self.bm25_encoder = SparseTextEmbedding("Qdrant/bm25")
+        self.late_encoder = LateInteractionTextEmbedding("colbert-ir/colbertv2.0")
+
         self.tenant = tenant
         self.qdrant = QdrantClient(host=host, port=port)
 
@@ -58,14 +62,28 @@ class CodebaseStore:
         if not self.qdrant.collection_exists(name):
             self.qdrant.create_collection(
                 collection_name=name,
-                vectors_config=VectorParams(size=self.encoder.model.embeddings_size, distance=Distance.COSINE),
-                optimizers_config=OptimizersConfigDiff(default_segment_number=1),
-                on_disk_payload=True,
+                vectors_config={
+                    "dense": models.VectorParams(
+                        size=self.dense_encoder.model.embedding_size,
+                        distance=models.Distance.COSINE,
+                    ),
+                    "rerank": models.VectorParams(
+                        size=self.late_encoder.embedding_size,
+                        distance=models.Distance.COSINE,
+                        multivector_config=models.MultiVectorConfig(
+                            comparator=models.MultiVectorComparator.MAX_SIM,
+                        ),
+                        hnsw_config=models.HnswConfigDiff(m=0),  # Disable HNSW for reranking
+                    ),
+                },
+                sparse_vectors_config={"bm25": models.SparseVectorParams(modifier=models.Modifier.IDF)},
             )
 
     def add(self, data: CodeData) -> None:
         text = data.source_code
-        vector = self.encoder.embed_documents([text])[0]
+        dense_embedding = self.dense_encoder.embed_documents([text])[0]
+        bm25_embedding = list(self.bm25_encoder.embed(text))[0]
+        rerank_embedding = list(self.late_encoder.embed(text))[0]
 
         metadata = data.model_dump(exclude={"source_code", "references"}, mode="json")
         metadata["references"] = json.dumps([ref.model_dump(mode="json") for ref in data.references])
@@ -73,7 +91,15 @@ class CodebaseStore:
 
         collection = self.class_collection if isinstance(data, ClassData) else self.method_collection
 
-        point = PointStruct(id=doc_id, vector=vector, payload={"text": text, **metadata})
+        point = PointStruct(
+            id=doc_id,
+            vector={
+                "dense": dense_embedding,
+                "bm25": bm25_embedding.as_object(),
+                "rerank": rerank_embedding,
+            },
+            payload={"text": text, **metadata},
+        )
         self.qdrant.upsert(collection_name=collection, points=[point])
 
     def clear(self) -> None:
@@ -92,10 +118,14 @@ class CodebaseStore:
     ) -> list[tuple[CodeData, float]]:
         collection = self.class_collection if is_class else self.method_collection
         query_filter = self._build_filter(**filters)
-        vector = self.encoder.embed_query(query)
+        vector = self.dense_encoder.embed_query(query)
 
         result = self.qdrant.query_points(
-            collection_name=collection, query=vector, limit=top_k, query_filter=query_filter,
+            collection_name=collection,
+            query=vector,
+            limit=top_k,
+            query_filter=query_filter,
+            using="dense",
         )
 
         return [self._parse_hit(hit, is_class=is_class) for hit in result.points]
@@ -127,29 +157,40 @@ class CodebaseStore:
         self,
         query: str,
         *,
-        alpha: float = 0.5,
         top_k: int = 5,
+        top_intermediate_k: int = 20,
         is_class: bool = False,
         **filters: Any,
     ) -> list[tuple[CodeData, float]]:
         """Hybrid score = alpha * vector_score + (1 - alpha) * keyword_score"""
         collection = self.class_collection if is_class else self.method_collection
         query_filter = self._build_filter(**filters)
-        vector = self.encoder.embed_query(query)
+
+        dense_vector = self.dense_encoder.embed_query(query)
+        sparse_vectors = next(self.bm25_encoder.query_embed(query))
+        late_vectors = next(self.late_encoder.query_embed(query))
+
+        prefetch = [
+            models.Prefetch(
+                query=dense_vector,
+                using="dense",
+                limit=top_intermediate_k,
+            ),
+            models.Prefetch(
+                query=models.SparseVector(**sparse_vectors.as_object()),
+                using="bm25",
+                limit=top_intermediate_k,
+            ),
+        ]
 
         result = self.qdrant.query_points(
             collection_name=collection,
-            query=vector,
+            prefetch=prefetch,
+            query=late_vectors,
             limit=top_k,
             query_filter=query_filter,
             with_payload=True,
-            with_vectors=False,
-            score_threshold=None,
-            search_params=qdrant_models.SearchParams(hnsw_ef=128, exact=False),
-            keyword=query,
-            using="hybrid",
-            offset=0,
-            rerank=alpha,  # Alpha blending between embedding and keyword similarity
+            using="rerank",
         )
 
         return [self._parse_hit(hit, is_class=is_class) for hit in result.points]
