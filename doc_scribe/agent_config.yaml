@@ -2,6 +2,7 @@ data:
   tenant: aaas
   encoder: TITAN_V1
 agent:
+  retries: 3
   llm:
     name: CLAUDE_3_5_SONNET
     temperature: 0.5
