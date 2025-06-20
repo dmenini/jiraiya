@@ -6,7 +6,7 @@ from typing import Any
 from fastembed import LateInteractionTextEmbedding, SparseTextEmbedding
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qdrant_models
-from qdrant_client.http.models import models, ScoredPoint
+from qdrant_client.http.models import Record, ScoredPoint, models
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
 from doc_scribe.domain.data import ClassData, CodeData, MethodData, ReferenceData
@@ -35,7 +35,7 @@ def calculate_id(content: str, source: str) -> str:
     return str(hash_string_to_uuid(content_hash + source_hash))
 
 
-class CodeVectorStore:
+class VectorStore:
     def __init__(
         self,
         tenant: str,
@@ -120,7 +120,7 @@ class CodeVectorStore:
     ) -> list[tuple[CodeData, float]]:
         collection = self.class_collection if is_class else self.method_collection
         query_filter = self._build_filter(**filters)
-        vector = self.dense_encoder.query_embed(query)
+        vector = next(self.dense_encoder.query_embed(query))
 
         result = self.qdrant.query_points(
             collection_name=collection,
@@ -161,7 +161,7 @@ class CodeVectorStore:
         *,
         top_k: int = 5,
         top_intermediate_k: int = 20,
-        is_class: bool = False,
+        is_class: bool = True,
         **filters: Any,
     ) -> list[tuple[CodeData, float]]:
         """Hybrid score = alpha * vector_score + (1 - alpha) * keyword_score"""
@@ -197,30 +197,41 @@ class CodeVectorStore:
 
         return [self._parse_hit(hit, is_class=is_class) for hit in result.points]
 
-    def _parse_hit(self, hit: ScoredPoint, *, is_class: bool = True) -> tuple[CodeData, float]:
+    def _parse_hit(self, hit: ScoredPoint | Record, *, is_class: bool = True) -> tuple[CodeData, float]:
         payload = hit.payload
         refs = json.loads(payload.pop("references", "[]"))
         payload["references"] = [ReferenceData.model_validate(ref) for ref in refs]
         payload["source_code"] = payload.pop("text", "")
 
         model_cls = ClassData if is_class else MethodData
-        return model_cls.model_validate(payload), hit.score
+        model = model_cls.model_validate(payload)
+
+        score = hit.score if isinstance(hit, ScoredPoint) else 1.0
+
+        return model, score
 
     def find(
         self,
+        *,
         is_class: bool = True,
-        limit: int = 100,
+        limit: int = 10,
+        offset: int = 0,
         **filters: Any,
     ) -> list[CodeData]:
         collection = self.class_collection if is_class else self.method_collection
-        query_filter = self._build_filter(**filters)
+        scroll_filter = self._build_filter(**filters)
 
-        result = self.qdrant.query_points(
+        response, _ = self.qdrant.scroll(
             collection,
             limit=limit,
-            with_vectors=False,
-            with_payload=True,
-            query_filter=query_filter,
+            offset=offset,
+            scroll_filter=scroll_filter,
         )
 
-        return [self._parse_hit(hit, is_class=is_class)[0] for hit in result.points]
+        return [self._parse_hit(hit, is_class=is_class)[0] for hit in response]
+
+    def count(self, *, is_class: bool = True) -> int:
+        collection = self.class_collection if is_class else self.method_collection
+        result = self.qdrant.count(collection)
+        return result.count
+

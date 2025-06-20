@@ -16,7 +16,6 @@ from doc_scribe.settings import Settings
 from doc_scribe.writer.generator import (
     generate_code_analysis,
     generate_high_level_documentation,
-    write_code_analysis,
 )
 
 logger = logging.getLogger()

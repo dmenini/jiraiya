@@ -1,7 +1,8 @@
 import json
 import logging
 import os
-from typing import Any, Iterable, Literal
+from collections.abc import Iterable
+from typing import Any, Literal
 
 import boto3
 import numpy as np
