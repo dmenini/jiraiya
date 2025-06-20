@@ -7,7 +7,7 @@ from typing import ClassVar
 
 from pathspec import PathSpec
 from tree_sitter import Node
-from tree_sitter_language_pack import get_parser, SupportedLanguage
+from tree_sitter_language_pack import SupportedLanguage, get_parser
 
 from doc_scribe.domain.data import ClassData, MethodData, ReferenceData
 
@@ -41,7 +41,7 @@ FILE_EXTENSION_LANGUAGE_MAP: dict[str, SupportedLanguage] = {
 BLACKLIST = [".venv", "venv", ".git"]
 
 
-class CodeParser:
+class CodeBaseParser:
     CLASS_NODE_TYPES: ClassVar = {"class_definition", "class_declaration"}
     METHOD_NODE_TYPES: ClassVar = {"function_definition", "method_declaration"}
     CLASS_REF_PARENT_TYPES: ClassVar = {"type", "class_type", "object_creation_expression"}
@@ -121,30 +121,41 @@ class CodeParser:
 
     def _extract_class_and_method_nodes(self, root_node: Node) -> tuple[list[Node], list[Node]]:
         class_nodes: list[Node] = []
-        method_nodes: list[Node] = []
+        standalone_function_nodes: list[Node] = []
 
-        def walk(node: Node) -> None:
+        def walk(node: Node, inside_class: bool = False) -> None:
             if node.type in self.CLASS_NODE_TYPES:
                 class_nodes.append(node)
+                # When entering a class, set inside_class=True
+                for child in node.children:
+                    walk(child, inside_class=True)
             elif node.type in self.METHOD_NODE_TYPES:
-                method_nodes.append(node)
-            for child in node.children:
-                walk(child)
+                if not inside_class:
+                    standalone_function_nodes.append(node)
+                # Continue walking even from standalone functions
+                for child in node.children:
+                    walk(child, inside_class)
+            else:
+                for child in node.children:
+                    walk(child, inside_class)
 
         walk(root_node)
-        return class_nodes, method_nodes
+        return class_nodes, standalone_function_nodes
 
     def _process_class_nodes(self, class_nodes: list[Node], file_path: Path, code: str) -> list[ClassData]:
-        return [
-            ClassData(
-                repo=self.repo,
-                file_path=file_path.relative_to(self.codebase_path),
-                name=class_node.child_by_field_name("name").text.decode(),
-                source_code=code[class_node.start_byte: class_node.end_byte],
-                docstring=self._extract_docstring(class_node, code),
+        processed = []
+        for class_node in class_nodes:
+            full_source = self._get_full_source_with_annotations(class_node, code)
+            processed.append(
+                ClassData(
+                    repo=self.repo,
+                    file_path=file_path.relative_to(self.codebase_path),
+                    name=class_node.child_by_field_name("name").text.decode(),
+                    source_code=full_source,
+                    docstring=self._extract_docstring(class_node, code),
+                )
             )
-            for class_node in class_nodes
-        ]
+        return processed
 
     def _process_method_nodes(self, method_nodes: list[Node], file_path: Path, code: str) -> list[MethodData]:
         processed = []
@@ -152,12 +163,13 @@ class CodeParser:
             name_node = method_node.child_by_field_name("name")
             if name_node:
                 method_name = name_node.text.decode()
+                full_source = self._get_full_source_with_annotations(method_node, code)
                 processed.append(
                     MethodData(
                         repo=self.repo,
                         file_path=file_path.relative_to(self.codebase_path),
                         name=method_name,
-                        source_code=code[method_node.start_byte: method_node.end_byte],
+                        source_code=full_source,
                         docstring=self._extract_docstring(method_node, code),
                     )
                 )
@@ -171,9 +183,57 @@ class CodeParser:
                 if child.type == "expression_statement" and child.children:
                     expr = child.children[0]
                     if expr.type == "string":
-                        raw_docstring = code[expr.start_byte: expr.end_byte]
+                        raw_docstring = code[expr.start_byte : expr.end_byte]
                         return ast.literal_eval(raw_docstring)  # Unescape Python string
         return ""
+
+    def _find_annotations_for_node(self, target_node: Node, code: str) -> list[str]:
+        """
+        Find decorators/annotations that precede a function or method node.
+        Returns a list of annotation strings (e.g., ['@contextmanager', '@lru_cache(maxsize=128)']).
+        """
+        annotations = []
+
+        # Get the parent node to search for decorators
+        parent = target_node.parent
+        if not parent:
+            return annotations
+
+        # Find the index of our target node in the parent's children
+        target_index = None
+        for i, child in enumerate(parent.children):
+            if child == target_node:
+                target_index = i
+                break
+
+        if target_index is None:
+            return annotations
+
+        # Look backwards from the target node to find decorators
+        # Decorators typically appear as 'decorator' nodes in tree-sitter
+        for i in range(target_index - 1, -1, -1):
+            child = parent.children[i]
+
+            if child.type in ["decorator", "annotation"]:
+                decorator_text = code[child.start_byte : child.end_byte].strip()
+                annotations.insert(0, decorator_text)  # Insert at beginning to maintain order
+            elif child.type not in ["comment", "line_comment", "block_comment"] and child.text.decode().strip():
+                break
+
+        return annotations
+
+    def _get_full_source_with_annotations(self, node: Node, code: str) -> str:
+        """
+        Get the complete source code for a method including its decorators/annotations.
+        """
+        annotations = self._find_annotations_for_node(node, code)
+        source = code[node.start_byte : node.end_byte]
+
+        if annotations:
+            # Join annotations with newlines and add the method source
+            return "\n".join(annotations) + "\n" + source
+
+        return source
 
     def resolve_references(
         self, class_data: list[ClassData], method_data: list[MethodData]
@@ -195,7 +255,7 @@ class CodeParser:
                     if node.type != "identifier":
                         continue  # Skip early
 
-                    name = code_bytes[node.start_byte: node.end_byte].decode("utf-8")
+                    name = code_bytes[node.start_byte : node.end_byte].decode("utf-8")
                     parent_type = parent.type
 
                     ref_type = None
@@ -207,7 +267,7 @@ class CodeParser:
                     if ref_type is None:
                         continue
 
-                    reference_text = code_bytes[parent.start_byte: parent.end_byte].decode("utf-8")
+                    reference_text = code_bytes[parent.start_byte : parent.end_byte].decode("utf-8")
                     reference = ReferenceData(
                         file=file_path,
                         line=node.start_point[0] + 1,
