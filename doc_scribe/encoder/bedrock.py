@@ -25,9 +25,9 @@ class BedrockEmbeddings(TextEmbeddingBase):
     def embed(
         self,
         documents: str | Iterable[str],
-        batch_size: int = 256,
-        parallel: int | None = None,
-        **kwargs: Any,
+        batch_size: int = 256,  # noqa: ARG002
+        parallel: int | None = None,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
     ) -> Iterable[NumpyArray]:
         if isinstance(documents, str):
             embedding = self._embed_query(documents)
@@ -43,7 +43,7 @@ class BedrockEmbeddings(TextEmbeddingBase):
                 else:
                     yield np.array(embedding)
 
-    def passage_embed(self, texts: Iterable[str], **kwargs: Any) -> Iterable[NumpyArray]:
+    def passage_embed(self, texts: Iterable[str], **kwargs: Any) -> Iterable[NumpyArray]:  # noqa: ARG002
         """Compute document embeddings using a Bedrock model."""
         for text in texts:
             if len(text) > self.model.max_chars:
@@ -80,8 +80,7 @@ class BedrockEmbeddings(TextEmbeddingBase):
         emb = np.array(embeddings)
         norms = np.linalg.norm(emb, axis=1, keepdims=True)
         norms[norms == 0] = 1  # Avoid division by zero
-        normalized = emb / norms
-        return normalized
+        return emb / norms
 
     def _cohere_embed(self, text: str, input_type: Literal["search_query", "search_document"]) -> list[float]:
         # Replace newlines, which can negatively affect performance.
