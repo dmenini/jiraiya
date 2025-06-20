@@ -9,7 +9,8 @@ from pathspec import PathSpec
 from tree_sitter import Node
 from tree_sitter_language_pack import SupportedLanguage, get_parser
 
-from doc_scribe.domain.data import CodeData, ReferenceData
+from doc_scribe.domain.data import CodeData
+from doc_scribe.io.reference_detector import ReferenceDetector
 
 log = logging.getLogger(__name__)
 
@@ -153,7 +154,6 @@ class CodeBaseParser:
                     type="class",
                     repo=self.repo,
                     file_path=file_path.relative_to(self.codebase_path),
-                    module=file_path.name,
                     name=class_node.child_by_field_name("name").text.decode(),
                     source_code=full_source,
                     docstring=self._extract_docstring(class_node, code),
@@ -241,36 +241,15 @@ class CodeBaseParser:
     def resolve_references(self, data: list[CodeData]) -> list[CodeData]:
         """Populate references."""
         files_by_language = self._group_files_by_language(self.source_files)
-        unique_names = {(d.module, d.name) for d in data}
-        references = defaultdict(list)
 
         for language, files in files_by_language.items():
-            parser = get_parser(language)
+            detector = ReferenceDetector(self.codebase_path, language)
+            references = detector.resolve_references(data, files)
 
-            for file_path in files:
-                code = file_path.read_text(encoding="utf-8")
-                code_bytes = code.encode("utf-8")
-                root = parser.parse(code_bytes).root_node
-
-                for node, parent in self._traverse_tree_with_parents(root):
-                    if node.type != "identifier":
-                        continue  # Skip early
-
-                    name = code_bytes[node.start_byte : node.end_byte].decode("utf-8")
-                    uname = (file_path.name, name)
-                    parent_type = parent.type
-
-                    if uname in unique_names and parent_type in self.REF_PARENT_TYPES:
-                        reference_text = code_bytes[parent.start_byte : parent.end_byte].decode("utf-8")
-                        reference = ReferenceData(
-                            file=file_path,
-                            line=node.start_point[0] + 1,
-                            column=node.start_point[1] + 1,
-                            text=reference_text,
-                        )
-                        references[uname].append(reference)
-
-        data = self._map_references(data, references)
+        for code_data in data:
+            qualified_name = f"{code_data.module}.{code_data.name}".lstrip(".")
+            code_data.references = references[qualified_name].references
+            print(f"{code_data.name}: {len(code_data.references)} references found")
 
         return data
 
@@ -281,16 +260,6 @@ class CodeBaseParser:
             node, parent = stack.pop()
             yield node, parent
             stack.extend((child, node) for child in reversed(node.children))
-
-    def _map_references(
-        self, data: list[CodeData], references: dict[tuple[str, str], list[ReferenceData]]
-    ) -> list[CodeData]:
-        data_dict = {(d.module, d.name): d for d in data}
-        for class_name, refs in references.items():
-            if class_name in data_dict:
-                data_dict[class_name].references = refs
-
-        return list(data_dict.values())
 
 
 def load_gitignore(codebase_path: Path) -> PathSpec | None:
