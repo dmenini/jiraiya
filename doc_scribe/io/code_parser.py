@@ -9,7 +9,7 @@ from pathspec import PathSpec
 from tree_sitter import Node
 from tree_sitter_language_pack import SupportedLanguage, get_parser
 
-from doc_scribe.domain.data import ClassData, MethodData, ReferenceData
+from doc_scribe.domain.data import CodeData, ReferenceData
 
 log = logging.getLogger(__name__)
 
@@ -44,8 +44,13 @@ BLACKLIST = [".venv", "venv", ".git"]
 class CodeBaseParser:
     CLASS_NODE_TYPES: ClassVar = {"class_definition", "class_declaration"}
     METHOD_NODE_TYPES: ClassVar = {"function_definition", "method_declaration"}
-    CLASS_REF_PARENT_TYPES: ClassVar = {"type", "class_type", "object_creation_expression"}
-    METHOD_REF_PARENT_TYPES: ClassVar = {"call_expression", "method_invocation"}
+    REF_PARENT_TYPES: ClassVar = {
+        "type",
+        "class_type",
+        "object_creation_expression",
+        "call_expression",
+        "method_invocation",
+    }
 
     def __init__(self, codebase_path: Path, *, blacklist: list | None = None, preload: bool = True) -> None:
         self.codebase_path = codebase_path
@@ -56,8 +61,6 @@ class CodeBaseParser:
             self.source_files = self.load_files(codebase_path)
         else:
             self.source_files = []
-
-        self.references = {"class": defaultdict(list), "method": defaultdict(list)}
 
     def load_files(self, codebase_path: Path) -> list[tuple[Path, SupportedLanguage]]:
         file_list = []
@@ -92,9 +95,8 @@ class CodeBaseParser:
 
         return True
 
-    def extract_ast_nodes(self) -> tuple[list[ClassData], list[MethodData]]:
-        class_data: list[ClassData] = []
-        method_data: list[MethodData] = []
+    def extract_ast_nodes(self) -> list[CodeData]:
+        data: list[CodeData] = []
         files_by_language = self._group_files_by_language(self.source_files)
 
         for language, files in files_by_language.items():
@@ -106,10 +108,10 @@ class CodeBaseParser:
 
                 class_nodes, method_nodes = self._extract_class_and_method_nodes(root_node)
 
-                class_data.extend(self._process_class_nodes(class_nodes, file_path, code))
-                method_data.extend(self._process_method_nodes(method_nodes, file_path, code))
+                data.extend(self._process_class_nodes(class_nodes, file_path, code))
+                data.extend(self._process_method_nodes(method_nodes, file_path, code))
 
-        return class_data, method_data
+        return data
 
     def _group_files_by_language(
         self, file_list: list[tuple[Path, SupportedLanguage]]
@@ -123,7 +125,7 @@ class CodeBaseParser:
         class_nodes: list[Node] = []
         standalone_function_nodes: list[Node] = []
 
-        def walk(node: Node, inside_class: bool = False) -> None:
+        def walk(node: Node, *, inside_class: bool = False) -> None:
             if node.type in self.CLASS_NODE_TYPES:
                 class_nodes.append(node)
                 # When entering a class, set inside_class=True
@@ -134,22 +136,24 @@ class CodeBaseParser:
                     standalone_function_nodes.append(node)
                 # Continue walking even from standalone functions
                 for child in node.children:
-                    walk(child, inside_class)
+                    walk(child, inside_class=inside_class)
             else:
                 for child in node.children:
-                    walk(child, inside_class)
+                    walk(child, inside_class=inside_class)
 
         walk(root_node)
         return class_nodes, standalone_function_nodes
 
-    def _process_class_nodes(self, class_nodes: list[Node], file_path: Path, code: str) -> list[ClassData]:
+    def _process_class_nodes(self, class_nodes: list[Node], file_path: Path, code: str) -> list[CodeData]:
         processed = []
         for class_node in class_nodes:
             full_source = self._get_full_source_with_annotations(class_node, code)
             processed.append(
-                ClassData(
+                CodeData(
+                    type="class",
                     repo=self.repo,
                     file_path=file_path.relative_to(self.codebase_path),
+                    module=file_path.name,
                     name=class_node.child_by_field_name("name").text.decode(),
                     source_code=full_source,
                     docstring=self._extract_docstring(class_node, code),
@@ -157,7 +161,7 @@ class CodeBaseParser:
             )
         return processed
 
-    def _process_method_nodes(self, method_nodes: list[Node], file_path: Path, code: str) -> list[MethodData]:
+    def _process_method_nodes(self, method_nodes: list[Node], file_path: Path, code: str) -> list[CodeData]:
         processed = []
         for method_node in method_nodes:
             name_node = method_node.child_by_field_name("name")
@@ -165,7 +169,8 @@ class CodeBaseParser:
                 method_name = name_node.text.decode()
                 full_source = self._get_full_source_with_annotations(method_node, code)
                 processed.append(
-                    MethodData(
+                    CodeData(
+                        type="function",
                         repo=self.repo,
                         file_path=file_path.relative_to(self.codebase_path),
                         name=method_name,
@@ -223,9 +228,7 @@ class CodeBaseParser:
         return annotations
 
     def _get_full_source_with_annotations(self, node: Node, code: str) -> str:
-        """
-        Get the complete source code for a method including its decorators/annotations.
-        """
+        """Get the complete source code for a method including its decorators/annotations."""
         annotations = self._find_annotations_for_node(node, code)
         source = code[node.start_byte : node.end_byte]
 
@@ -235,13 +238,11 @@ class CodeBaseParser:
 
         return source
 
-    def resolve_references(
-        self, class_data: list[ClassData], method_data: list[MethodData]
-    ) -> tuple[list[ClassData], list[MethodData]]:
-        """Populate self.references with found references."""
+    def resolve_references(self, data: list[CodeData]) -> list[CodeData]:
+        """Populate references."""
         files_by_language = self._group_files_by_language(self.source_files)
-        class_names = {c.name for c in class_data}
-        method_names = {m.name for m in method_data}
+        unique_names = {(d.module, d.name) for d in data}
+        references = defaultdict(list)
 
         for language, files in files_by_language.items():
             parser = get_parser(language)
@@ -256,30 +257,22 @@ class CodeBaseParser:
                         continue  # Skip early
 
                     name = code_bytes[node.start_byte : node.end_byte].decode("utf-8")
+                    uname = (file_path.name, name)
                     parent_type = parent.type
 
-                    ref_type = None
-                    if name in class_names and parent_type in self.CLASS_REF_PARENT_TYPES:
-                        ref_type = "class"
-                    elif name in method_names and parent_type in self.METHOD_REF_PARENT_TYPES:
-                        ref_type = "name"
+                    if uname in unique_names and parent_type in self.REF_PARENT_TYPES:
+                        reference_text = code_bytes[parent.start_byte : parent.end_byte].decode("utf-8")
+                        reference = ReferenceData(
+                            file=file_path,
+                            line=node.start_point[0] + 1,
+                            column=node.start_point[1] + 1,
+                            text=reference_text,
+                        )
+                        references[uname].append(reference)
 
-                    if ref_type is None:
-                        continue
+        data = self._map_references(data, references)
 
-                    reference_text = code_bytes[parent.start_byte : parent.end_byte].decode("utf-8")
-                    reference = ReferenceData(
-                        file=file_path,
-                        line=node.start_point[0] + 1,
-                        column=node.start_point[1] + 1,
-                        text=reference_text,
-                    )
-                    self.references[ref_type][name].append(reference)
-
-        class_data = self._map_references_to_classes(class_data)
-        method_data = self._map_references_to_methods(method_data)
-
-        return class_data, method_data
+        return data
 
     def _traverse_tree_with_parents(self, root: Node) -> Iterator[tuple[Node, Node]]:
         """Yield (node, parent) pairs in depth-first traversal."""
@@ -289,22 +282,15 @@ class CodeBaseParser:
             yield node, parent
             stack.extend((child, node) for child in reversed(node.children))
 
-    def _map_references_to_classes(self, class_data: list[ClassData]) -> list[ClassData]:
-        class_data_dict = {cd.name: cd for cd in class_data}
-        for class_name, refs in self.references["class"].items():
-            if class_name in class_data_dict:
-                class_data_dict[class_name].references = refs
+    def _map_references(
+        self, data: list[CodeData], references: dict[tuple[str, str], list[ReferenceData]]
+    ) -> list[CodeData]:
+        data_dict = {(d.module, d.name): d for d in data}
+        for class_name, refs in references.items():
+            if class_name in data_dict:
+                data_dict[class_name].references = refs
 
-        return list(class_data_dict.values())
-
-    def _map_references_to_methods(self, method_data: list[MethodData]) -> list[MethodData]:
-        method_data_dict = {(md.parent_name, md.name): md for md in method_data}
-        for method_name, refs in self.references["method"].items():
-            for key in method_data_dict:
-                if key[1] == method_name:
-                    method_data_dict[key].references = refs
-
-        return list(method_data_dict.values())
+        return list(data_dict.values())
 
 
 def load_gitignore(codebase_path: Path) -> PathSpec | None:

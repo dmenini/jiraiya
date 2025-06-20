@@ -9,7 +9,7 @@ from qdrant_client.http import models as qdrant_models
 from qdrant_client.http.models import Record, ScoredPoint, models
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
-from doc_scribe.domain.data import ClassData, CodeData, MethodData, ReferenceData
+from doc_scribe.domain.data import CodeData, ReferenceData
 from doc_scribe.encoder.bedrock import BedrockEmbeddings
 
 NAMESPACE_UUID = uuid.UUID(int=1984)  # do not change or the hashes will be different
@@ -52,11 +52,9 @@ class VectorStore:
         self.tenant = tenant
         self.qdrant = QdrantClient(host=host, port=port)
 
-        self.method_collection = f"{tenant}_method"
-        self.class_collection = f"{tenant}_class"
+        self.collection = f"{tenant}_class"
 
-        self._ensure_collection(self.method_collection)
-        self._ensure_collection(self.class_collection)
+        self._ensure_collection(self.collection)
 
     def _ensure_collection(self, name: str) -> None:
         if not self.qdrant.collection_exists(name):
@@ -89,8 +87,6 @@ class VectorStore:
         metadata["references"] = json.dumps([ref.model_dump(mode="json") for ref in data.references])
         doc_id = calculate_id(content=text, source=str(data.file_path))
 
-        collection = self.class_collection if isinstance(data, ClassData) else self.method_collection
-
         point = PointStruct(
             id=doc_id,
             vector={
@@ -100,13 +96,11 @@ class VectorStore:
             },
             payload={"text": text, **metadata},
         )
-        self.qdrant.upsert(collection_name=collection, points=[point])
+        self.qdrant.upsert(collection_name=self.collection, points=[point])
 
     def clear(self) -> None:
-        self.qdrant.delete_collection(collection_name=self.class_collection)
-        self.qdrant.delete_collection(collection_name=self.method_collection)
-        self._ensure_collection(self.method_collection)
-        self._ensure_collection(self.class_collection)
+        self.qdrant.delete_collection(collection_name=self.collection)
+        self._ensure_collection(self.collection)
 
     def _build_filter(self, **filters: Any) -> Filter | None:
         return (
@@ -115,36 +109,31 @@ class VectorStore:
             else None
         )
 
-    def similarity_search(
-        self, query: str, *, top_k: int = 5, is_class: bool = True, **filters: Any
-    ) -> list[tuple[CodeData, float]]:
-        collection = self.class_collection if is_class else self.method_collection
+    def similarity_search(self, query: str, *, top_k: int = 5, **filters: Any) -> list[tuple[CodeData, float]]:
         query_filter = self._build_filter(**filters)
         vector = next(self.dense_encoder.query_embed(query))
 
         result = self.qdrant.query_points(
-            collection_name=collection,
+            collection_name=self.collection,
             query=vector,
             limit=top_k,
             query_filter=query_filter,
             using="dense",
         )
 
-        return [self._parse_hit(hit, is_class=is_class) for hit in result.points]
+        return [self._parse_hit(hit) for hit in result.points]
 
     def keyword_search(
         self,
         keyword: str,
         *,
         top_k: int = 5,
-        is_class: bool = True,
         **filters: Any,
     ) -> list[tuple[CodeData, float]]:
-        collection = self.class_collection if is_class else self.method_collection
         query_filter = self._build_filter(**filters)
 
         result = self.qdrant.query_points(
-            collection_name=collection,
+            collection_name=self.collection,
             limit=top_k,
             query_filter=query_filter,
             with_payload=True,
@@ -153,7 +142,7 @@ class VectorStore:
             keyword=keyword,
         )
 
-        return [self._parse_hit(hit, is_class=is_class) for hit in result.points]
+        return [self._parse_hit(hit) for hit in result.points]
 
     def hybrid_search(
         self,
@@ -161,11 +150,9 @@ class VectorStore:
         *,
         top_k: int = 5,
         top_intermediate_k: int = 20,
-        is_class: bool = True,
         **filters: Any,
     ) -> list[tuple[CodeData, float]]:
         """Hybrid score = alpha * vector_score + (1 - alpha) * keyword_score"""
-        collection = self.class_collection if is_class else self.method_collection
         query_filter = self._build_filter(**filters)
 
         dense_vector = next(self.dense_encoder.query_embed(query))
@@ -186,7 +173,7 @@ class VectorStore:
         ]
 
         result = self.qdrant.query_points(
-            collection_name=collection,
+            collection_name=self.collection,
             prefetch=prefetch,
             query=late_vectors,
             limit=top_k,
@@ -195,16 +182,15 @@ class VectorStore:
             using="rerank",
         )
 
-        return [self._parse_hit(hit, is_class=is_class) for hit in result.points]
+        return [self._parse_hit(hit) for hit in result.points]
 
-    def _parse_hit(self, hit: ScoredPoint | Record, *, is_class: bool = True) -> tuple[CodeData, float]:
+    def _parse_hit(self, hit: ScoredPoint | Record) -> tuple[CodeData, float]:
         payload = hit.payload
         refs = json.loads(payload.pop("references", "[]"))
         payload["references"] = [ReferenceData.model_validate(ref) for ref in refs]
         payload["source_code"] = payload.pop("text", "")
 
-        model_cls = ClassData if is_class else MethodData
-        model = model_cls.model_validate(payload)
+        model = CodeData.model_validate(payload)
 
         score = hit.score if isinstance(hit, ScoredPoint) else 1.0
 
@@ -213,25 +199,21 @@ class VectorStore:
     def find(
         self,
         *,
-        is_class: bool = True,
         limit: int = 10,
         offset: int = 0,
         **filters: Any,
     ) -> list[CodeData]:
-        collection = self.class_collection if is_class else self.method_collection
         scroll_filter = self._build_filter(**filters)
 
         response, _ = self.qdrant.scroll(
-            collection,
+            self.collection,
             limit=limit,
             offset=offset,
             scroll_filter=scroll_filter,
         )
 
-        return [self._parse_hit(hit, is_class=is_class)[0] for hit in response]
+        return [self._parse_hit(hit)[0] for hit in response]
 
-    def count(self, *, is_class: bool = True) -> int:
-        collection = self.class_collection if is_class else self.method_collection
-        result = self.qdrant.count(collection)
+    def count(self) -> int:
+        result = self.qdrant.count(self.collection)
         return result.count
-

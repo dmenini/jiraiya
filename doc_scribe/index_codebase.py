@@ -5,7 +5,7 @@ import yaml
 from tqdm import tqdm
 
 from doc_scribe.domain.config import Config
-from doc_scribe.domain.data import ClassData
+from doc_scribe.domain.data import CodeData
 from doc_scribe.domain.enums import EncoderName
 from doc_scribe.io.code_parser import CodeBaseParser
 from doc_scribe.settings import Settings
@@ -55,7 +55,14 @@ if __name__ == "__main__":
             for file in tqdm(special_files, total=len(special_files)):
                 content = file.read_text(encoding="utf-8")
                 text = md_template.format(file_path=file, content=content)
-                data = ClassData(repo=path.name, file_path=file, name=file.name, source_code=text)
+                data = CodeData(
+                    type="extra",
+                    repo=path.name,
+                    module=file.name,
+                    file_path=file,
+                    name=file.name,
+                    source_code=text,
+                )
                 vectorstore.add(data=data)
 
         log.info("Added %d documents to vector store", len(all_data) + len(special_files))

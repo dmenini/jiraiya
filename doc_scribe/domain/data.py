@@ -11,25 +11,12 @@ class ReferenceData(BaseModel):
 
 
 class CodeData(BaseModel):
+    type: str
     repo: str
     file_path: Path
+    module: str
     name: str
     source_code: str
     docstring: str = ""
     parent_name: str = ""
     references: list[ReferenceData] = []
-
-
-class ClassData(CodeData):
-    pass
-
-
-class MethodData(CodeData):
-    pass
-
-
-class TextData(BaseModel):
-    source: str
-    title: str
-    content: str
-    language: str = ""
