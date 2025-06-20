@@ -10,7 +10,7 @@ from pydantic_ai.models.anthropic import AnthropicModel
 
 from doc_scribe.domain.documentation import TechnicalDoc
 from doc_scribe.domain.enums import ModelName
-from doc_scribe.io.code_loader import CodebaseLoader
+from doc_scribe.io.code_parser import CodeBaseParser
 from doc_scribe.io.markdown import read_md
 from doc_scribe.settings import Settings
 from doc_scribe.writer.generator import (
@@ -72,40 +72,22 @@ def generate_documentation(project_root: str, project_name: str | None = None) -
 
     root = Path(project_root)
     project_name = project_name or root.name
-    loader = CodebaseLoader(root_path=root, exclude=[])
+    parser = CodeBaseParser(codebase_path=root, blacklist=[])
 
     code_analyzer = create_structured_agent(llm, settings, prompt=config["tech_writer"]["system_prompt"])
 
     # Module-level code analysis, consisting of summary, analysis and usage info for each top module
-    module_tree = loader.load_all_modules()
-    logger.info("Will proceed to analyse the following modules: %s", module_tree.keys())
+    logger.info("Will proceed to analyse the following modules: %s", parser.source_files)
+    class_data, method_data = parser.extract_ast_nodes()
+    module_tree = {c.name: c.source_code for c in class_data}
 
-    module_docs = generate_code_analysis(
+    generate_code_analysis(
         code_tree=module_tree,
         agent=code_analyzer,
         filepath=Path(project_name) / "module_level_analysis",
     )
 
-    tree = loader.load_all_files()
-    if len(tree) < settings.max_file_count:
-        # File-level code analysis, consisting of summary, analysis and usage info for each file
-        file_docs = generate_code_analysis(
-            code_tree=tree,
-            agent=code_analyzer,
-            filepath=Path(project_name) / "file_level_analysis",
-        )
-
-        # Integrate module and file docs into a comprehensive documentation, trying to avoid redundancy
-        final_doc = write_code_analysis(
-            file_docs=file_docs,
-            module_docs=module_docs,
-            filepath=Path(project_name) / "code_analysis",
-        )
-
-    else:
-        # In case of too many files we simply use the module analysis
-        logger.info("Found %d files in the project: file level analysis skipped", len(tree))
-        final_doc = read_md(filepath=Path(project_name) / "module_level_analysis")
+    final_doc = read_md(filepath=Path(project_name) / "module_level_analysis")
 
     # High level documentation of the whole codebase, using the previous code analysis as source
     writer = create_str_agent(llm, settings, prompt=config["docs_writer"]["system_prompt"])
