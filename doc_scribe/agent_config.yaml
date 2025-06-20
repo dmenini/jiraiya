@@ -4,9 +4,10 @@ data:
   bm25_encoder: Qdrant/bm25
   late_encoder: jinaai/jina-colbert-v2
   codebases:
-    - /Users/taamedag/Desktop/cai/aaas/upload-job/
+    - /Users/taamedag/Desktop/cai/aaas/knowledge-manager
   blacklist:
     - tests
+    - evaluation
     - integration_tests
     - cicd
 agent:
