@@ -19,17 +19,17 @@ WHITELIST_FILES = [".java", ".py", ".js", ".rs", ".kt"]
 NODE_TYPES = {
     "python": {"class": "class_definition", "method": "function_definition"},
     "java": {"class": "class_declaration", "method": "method_declaration"},
+    "kotlin": {"class": "class_declaration", "method": "method_declaration"},
     "rust": {"class": "struct_item", "method": "function_item"},
     "javascript": {"class": "class_declaration", "method": "method_definition"},
-    # Add other languages as needed
 }
 
 REFERENCE_IDENTIFIERS = {
     "python": {"class": "identifier", "method": "call", "child_field_name": "function"},
     "java": {"class": "identifier", "method": "method_invocation", "child_field_name": "name"},
+    "kotlin": {"class": "identifier", "method": "method_invocation", "child_field_name": "name"},
     "javascript": {"class": "identifier", "method": "call_expression", "child_field_name": "function"},
     "rust": {"class": "identifier", "method": "call_expression", "child_field_name": "function"},
-    # Add other languages as needed
 }
 
 FILE_EXTENSION_LANGUAGE_MAP: dict[str, SupportedLanguage] = {

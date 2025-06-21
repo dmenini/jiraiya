@@ -77,7 +77,7 @@ def generate_documentation(project_root: str, project_name: str | None = None) -
 
     # Module-level code analysis, consisting of summary, analysis and usage info for each top module
     logger.info("Will proceed to analyse the following modules: %s", parser.source_files)
-    class_data, method_data = parser.extract_ast_nodes()
+    class_data = parser.extract_ast_nodes()
     module_tree = {c.name: c.source_code for c in class_data}
 
     generate_code_analysis(

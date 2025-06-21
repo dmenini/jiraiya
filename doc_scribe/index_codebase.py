@@ -4,13 +4,16 @@ from pathlib import Path
 import yaml
 from tqdm import tqdm
 
+from doc_scribe.agent.components import create_docs_writer
 from doc_scribe.domain.config import Config
-from doc_scribe.domain.data import CodeData
+from doc_scribe.domain.data import TextData
+from doc_scribe.domain.documentation import TechnicalDoc
 from doc_scribe.io.code_parser import CodeBaseParser
 from doc_scribe.settings import Settings
-from doc_scribe.store.vectore_store import VectorStore
+from doc_scribe.store.code_store import CodeVectorStore
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +23,8 @@ if __name__ == "__main__":
     with config_path.open() as fp:
         config = yaml.safe_load(fp)
         config = Config.model_validate(config)
+
+    writer = create_docs_writer(config.agent)
 
     for codebase_path in config.data.codebases:
         path = Path(codebase_path)
@@ -33,33 +38,39 @@ if __name__ == "__main__":
         data = code_parser.extract_ast_nodes()
         data = code_parser.resolve_references(data)
 
-        vectorstore = VectorStore(
+        vectorstore = CodeVectorStore(
             tenant=config.data.tenant,
-            dense_encoder=config.data.dense_encoder,
-            bm25_encoder=config.data.bm25_encoder,
-            late_encoder=config.data.late_encoder,
+            code_encoder=config.data.code_encoder,
+            text_encoder=config.data.dense_encoder,
             host=settings.qdrant_host,
             port=settings.qdrant_port,
         )
+        vectorstore.clear()
 
         for dp in tqdm(data, total=len(data)):
-            vectorstore.add(data=dp)
+            response = writer.run_sync(user_prompt=dp.source_code)
+            output: TechnicalDoc = response.output
 
-        # Add markdown and shell files as class-like documents
+            text = TextData(
+                repo=dp.repo, name=dp.name, file_path=dp.file_path, text=output.to_markdown(path=str(dp.file_path))
+            )
+
+            vectorstore.add_code(data=dp)
+            vectorstore.add_text(data=text)
+
+        # Add markdown documents
         special_files = list(path.rglob("*.md")) + list(path.rglob("*.sh"))
         md_template = "File: {file_path}\n\nContent:\n{content}"
 
         if special_files:
             for file in tqdm(special_files, total=len(special_files)):
                 content = file.read_text(encoding="utf-8")
-                text = md_template.format(file_path=file, content=content)
-                data = CodeData(
-                    type="extra",
+                text = TextData(
                     repo=path.name,
-                    file_path=file,
                     name=file.name,
-                    source_code=text,
+                    file_path=file,
+                    text=md_template.format(file_path=file, content=content),
                 )
-                vectorstore.add(data=data)
+                vectorstore.add_text(data=text)
 
         log.info("Added %d documents to vector store", len(data) + len(special_files))

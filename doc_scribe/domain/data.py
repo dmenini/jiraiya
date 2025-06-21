@@ -37,3 +37,18 @@ class CodeData(BaseModel):
     @property
     def module(self) -> str:
         return str(self.file_path.with_suffix("")).replace("/", ".").replace(self.repo, "")
+
+
+class TextData(BaseModel):
+    type: str = "text"
+    repo: str
+    file_path: Path
+    name: str
+    text: str
+
+
+class SearchResult(BaseModel):
+    file_path: str
+    name: str
+    text: str
+    score: float = 1

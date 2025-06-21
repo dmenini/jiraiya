@@ -3,22 +3,24 @@ from pydantic import BaseModel
 
 class DataConfig(BaseModel):
     tenant: str
-    dense_encoder: str
-    bm25_encoder: str
-    late_encoder: str
+    dense_encoder: str = "sentence-transformers/all-MiniLM-L6-v2"
+    code_encoder: str = "jinaai/jina-embeddings-v2-base-code"
+    bm25_encoder: str = "Qdrant/bm25"
+    late_encoder: str = "jinaai/jina-colbert-v2"
     codebases: list[str]
-    blacklist: list[str]
+    blacklist: list[str] = []
 
 
 class ToolConfig(BaseModel):
     name: str
     description: str
-    search_strategy: str
-    top_k: int
+    search_strategy: str = "similarity"
+    top_k: int = 5
 
 
 class ToolsConfig(BaseModel):
     search: ToolConfig
+    repo: ToolConfig
 
 
 class LLMConfig(BaseModel):
@@ -30,6 +32,7 @@ class LLMConfig(BaseModel):
 
 class PromptsConfig(BaseModel):
     system: str
+    writer: str = ""
 
 
 class AgentConfig(BaseModel):
