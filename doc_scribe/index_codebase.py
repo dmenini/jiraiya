@@ -52,7 +52,10 @@ if __name__ == "__main__":
             output: TechnicalDoc = response.output
 
             text = TextData(
-                repo=dp.repo, name=dp.name, file_path=dp.file_path, text=output.to_markdown(path=str(dp.file_path))
+                repo=dp.repo,
+                name=dp.name,
+                file_path=dp.file_path,
+                text=output.to_markdown(path=str(dp.file_path)),
             )
 
             vectorstore.add_code(data=dp)

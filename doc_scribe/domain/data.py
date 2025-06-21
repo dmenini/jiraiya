@@ -49,6 +49,7 @@ class TextData(BaseModel):
 
 class SearchResult(BaseModel):
     file_path: str
+    repo: str
     name: str
     text: str
     score: float = 1

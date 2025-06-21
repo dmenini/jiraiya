@@ -1,4 +1,5 @@
 import json
+from collections.abc import Iterator
 from typing import Any
 
 from fastembed import TextEmbedding
@@ -25,7 +26,7 @@ class CodeVectorStore:
         self.tenant = tenant
         self.qdrant = QdrantClient(host=host, port=port)
 
-        self.collection = f"{tenant}_code"
+        self.collection = f"{tenant}_class"
 
         self._ensure_collection(self.collection)
 
@@ -50,7 +51,7 @@ class CodeVectorStore:
 
         metadata = data.model_dump(exclude={"source_code", "references"}, mode="json")
         metadata["references"] = json.dumps([ref.model_dump(mode="json") for ref in data.references])
-        doc_id = calculate_id(content=code, source=str(data.file_path))
+        doc_id = calculate_id(content=str(data.name), source=str(data.file_path))
 
         point = PointStruct(
             id=doc_id,
@@ -117,6 +118,7 @@ class CodeVectorStore:
 
         return SearchResult(
             file_path=payload["file_path"],
+            repo=payload["repo"],
             name=payload["name"],
             text=payload.get("text") or payload.get("source_code"),
             score=hit.score if isinstance(hit, ScoredPoint) else 1.0,
@@ -126,35 +128,35 @@ class CodeVectorStore:
         self,
         *,
         limit: int = 10,
-        offset: int = 0,
         **filters: Any,
-    ) -> list[CodeData]:
+    ) -> Iterator[SearchResult]:
         scroll_filter = self._build_filter(**filters)
-
-        response, _ = self.qdrant.scroll(
-            self.collection,
-            limit=limit,
-            offset=offset,
-            scroll_filter=scroll_filter,
-        )
-
-        return [self._parse_hit(hit)[0] for hit in response]
-
-    def get_all_repos(self, batch_size: int = 100) -> list[str]:
         offset = 0
-        unique_repos = set()
 
         while True:
-            results = self.find(limit=batch_size)
+            response, next_page_offset = self.qdrant.scroll(
+                self.collection,
+                limit=limit,
+                offset=offset,
+                scroll_filter=scroll_filter,
+            )
 
-            if not results:
+            if not response:
                 break
 
-            for res in results:
-                repo = res.repo
-                unique_repos.add(repo)
+            for hit in response:
+                yield self._parse_hit(hit)
 
-            offset += len(results)
+            offset = next_page_offset
+
+            if not offset:
+                break
+
+    def get_all_repos(self, batch_size: int = 100) -> list[str]:
+        unique_repos = set()
+
+        for res in self.find(limit=batch_size):
+            unique_repos.add(res.repo)
 
         return list(unique_repos)
 
