@@ -51,7 +51,7 @@ class CodeVectorStore:
 
         metadata = data.model_dump(exclude={"source_code", "references"}, mode="json")
         metadata["references"] = json.dumps([ref.model_dump(mode="json") for ref in data.references])
-        doc_id = calculate_id(content=str(data.name), source=str(data.file_path))
+        doc_id = calculate_id(content="code" + data.name, source=str(data.file_path))
 
         point = PointStruct(
             id=doc_id,
@@ -65,7 +65,7 @@ class CodeVectorStore:
         metadata = data.model_dump(exclude={"source_code"}, mode="json")
 
         # Unique id per name and file path of docs
-        doc_id = calculate_id(content=data.name, source=str(data.file_path))
+        doc_id = calculate_id(content="text" + data.name, source=str(data.file_path))
 
         point = PointStruct(
             id=doc_id,

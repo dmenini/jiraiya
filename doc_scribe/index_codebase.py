@@ -24,6 +24,17 @@ if __name__ == "__main__":
         config = yaml.safe_load(fp)
         config = Config.model_validate(config)
 
+    vectorstore = CodeVectorStore(
+        tenant=config.data.tenant,
+        code_encoder=config.data.code_encoder,
+        text_encoder=config.data.dense_encoder,
+        host=settings.qdrant_host,
+        port=settings.qdrant_port,
+    )
+
+    if config.data.reset:
+        vectorstore.clear()
+
     writer = create_docs_writer(config.agent)
 
     for codebase_path in config.data.codebases:
@@ -37,15 +48,6 @@ if __name__ == "__main__":
 
         data = code_parser.extract_ast_nodes()
         data = code_parser.resolve_references(data)
-
-        vectorstore = CodeVectorStore(
-            tenant=config.data.tenant,
-            code_encoder=config.data.code_encoder,
-            text_encoder=config.data.dense_encoder,
-            host=settings.qdrant_host,
-            port=settings.qdrant_port,
-        )
-        vectorstore.clear()
 
         for dp in tqdm(data, total=len(data)):
             response = writer.run_sync(user_prompt=dp.source_code)

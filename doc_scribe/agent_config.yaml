@@ -5,16 +5,17 @@ data:
   bm25_encoder: Qdrant/bm25
   late_encoder: jinaai/jina-colbert-v2
   codebases:
-#    - /Users/taamedag/Desktop/cai/aaas/knowledge-manager
-#    - /Users/taamedag/Desktop/cai/aaas/upload-job
+    - /Users/taamedag/Desktop/cai/aaas/knowledge-manager
+    - /Users/taamedag/Desktop/cai/aaas/upload-job
 #    - /Users/taamedag/Desktop/cai/aaas/chat-api
-    - /Users/taamedag/Desktop/cai/aaas/parser-api
+#    - /Users/taamedag/Desktop/cai/aaas/parser-api
   blacklist:
     - tests
     - evaluation
     - integration_tests
     - cicd
     - .vscode
+  reset: false
 agent:
   retries: 3
   llm:
@@ -30,9 +31,6 @@ agent:
         The search yields better results if you specify the `repo` argument, based on the repos you have access to.
       search_strategy: hybrid
       top_k: 5
-    repo:
-      name: get_all_repos
-      description: Use this tool to get a list of repos you have access to
   prompts:
     system: |-
       You are a senior software architect with deep, contextual knowledge of the user’s codebase. 

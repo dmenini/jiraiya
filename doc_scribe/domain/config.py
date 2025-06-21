@@ -9,6 +9,7 @@ class DataConfig(BaseModel):
     late_encoder: str = "jinaai/jina-colbert-v2"
     codebases: list[str]
     blacklist: list[str] = []
+    reset: bool = False
 
 
 class ToolConfig(BaseModel):
@@ -20,7 +21,6 @@ class ToolConfig(BaseModel):
 
 class ToolsConfig(BaseModel):
     search: ToolConfig
-    repo: ToolConfig
 
 
 class LLMConfig(BaseModel):
