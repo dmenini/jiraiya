@@ -1,7 +1,12 @@
+import json
 import logging
+from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 
+import streamlit as st
 import yaml  # type: ignore[import-untyped]
+from pydantic_ai import Agent
 
 from doc_scribe.agent.components import create_agent
 from doc_scribe.agent.tools import ToolContext
@@ -14,27 +19,136 @@ logging.basicConfig(level=logging.INFO)
 
 settings = Settings()
 
-config_path = Path(__file__).parent / "agent_config.yaml"
-with config_path.open() as fp:
-    config = yaml.safe_load(fp)
-    config = Config.model_validate(config)
 
-vectorstore = CodeVectorStore(
-    tenant=config.data.tenant,
-    code_encoder=config.data.code_encoder,
-    text_encoder=config.data.dense_encoder,
-    host=settings.qdrant_host,
-    port=settings.qdrant_port,
-)
+# Streamlit Chat App Class
+class StreamlitChatApp:
+    def __init__(self, agent: Agent, context: ToolContext):
+        self.agent = agent
+        self.initialize_session_state()
+        self.context = context
 
-agent = create_agent(config=config.agent)
+        self.history = []
+        self.usage = None
 
-tool_context = ToolContext(vectorstore=vectorstore, **config.agent.tools.search.model_dump())
+    def initialize_session_state(self):
+        """Initialize Streamlit session state variables."""
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
+        if "agent_initialized" not in st.session_state:
+            st.session_state.agent_initialized = True
 
-user_prompt = "What are the routes in knowledge manager?"
-response = agent.run_sync(
-    user_prompt=user_prompt,
-    deps=tool_context,
-)
+    def display_chat_history(self):
+        """Display the chat history in the Streamlit interface."""
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-print(response.output)
+    def handle_user_input(self):
+        """Handle user input and generate agent response."""
+        if prompt := st.chat_input("Type your message here..."):
+            # Add user message to session state
+            st.session_state.messages.append({"role": "user", "content": prompt})
+
+            # Display user message
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            # Generate and display assistant response
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    response = self.agent.run_sync(user_prompt=prompt, deps=self.context, message_history=self.history)
+                    message = response.output
+                    self.history = response.all_messages()
+                    self.usage = response.usage()
+                st.markdown(message)
+
+            # Add assistant response to session state
+            st.session_state.messages.append({"role": "assistant", "content": message})
+
+    def display_sidebar(self):
+        """Display sidebar with app information and controls."""
+        with st.sidebar:
+            st.title("🤖 Chat Settings")
+            st.write(f"**LLM:** {self.agent.model.model_name}")
+
+            st.divider()
+
+            # Chat statistics
+            st.subheader("📊 Chat Stats")
+            user_messages = len([msg for msg in st.session_state.messages if msg["role"] == "user"])
+            assistant_messages = len([msg for msg in st.session_state.messages if msg["role"] == "assistant"])
+            st.write(f"User messages: {user_messages}")
+            st.write(f"Assistant messages: {assistant_messages}")
+            st.write(f"Usage: {self.usage}")
+
+            st.divider()
+
+            # Controls
+            st.subheader("🛠️ Controls")
+            if st.button("Clear Chat History", type="secondary"):
+                self.history = []
+                st.session_state.messages = []
+                st.rerun()
+
+            if st.button("Export Chat", type="secondary"):
+                chat_data = {
+                    "chat_history": st.session_state.messages,
+                    "timestamp": datetime.now().isoformat(),
+                    "llm": self.agent.model.model_name,
+                }
+                st.download_button(
+                    label="Download Chat JSON",
+                    data=json.dumps(chat_data, indent=2),
+                    file_name=f"chat_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json",
+                )
+
+    def run(self):
+        """Main method to run the Streamlit app."""
+        st.set_page_config(page_title="AI Chat Assistant", page_icon="🤖", layout="wide")
+
+        st.title("🤖 AI Chat Assistant")
+        st.markdown("---")
+
+        # Display sidebar
+        self.display_sidebar()
+
+        # Display chat history
+        self.display_chat_history()
+
+        # Handle user input
+        self.handle_user_input()
+
+
+def main() -> None:
+    # Initialize the Pydantic agent
+    config_path = Path(__file__).parent / "agent_config.yaml"
+    with config_path.open() as fp:
+        config = yaml.safe_load(fp)
+        config = Config.model_validate(config)
+
+    vectorstore = CodeVectorStore(
+        tenant=config.data.tenant,
+        code_encoder=config.data.code_encoder,
+        text_encoder=config.data.dense_encoder,
+        host=settings.qdrant_host,
+        port=settings.qdrant_port,
+    )
+
+    agent = create_agent(config=config.agent)
+
+    @lru_cache
+    @agent.system_prompt()
+    def add_repos() -> str:
+        repos = vectorstore.get_all_repos()
+
+        return f"The repositories you have access to are: {', '.join(repos)}.\n"
+
+    tool_context = ToolContext(vectorstore=vectorstore, **config.agent.tools.search.model_dump())
+
+    chat_app = StreamlitChatApp(agent, tool_context)
+    chat_app.run()
+
+
+if __name__ == "__main__":
+    main()

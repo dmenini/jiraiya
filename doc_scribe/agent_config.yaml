@@ -5,9 +5,9 @@ data:
   bm25_encoder: Qdrant/bm25
   late_encoder: jinaai/jina-colbert-v2
   codebases:
-    - /Users/taamedag/Desktop/cai/aaas/knowledge-manager
-    - /Users/taamedag/Desktop/cai/aaas/upload-job
-    - /Users/taamedag/Desktop/cai/aaas/chat-api
+#    - /Users/taamedag/Desktop/cai/aaas/knowledge-manager
+#    - /Users/taamedag/Desktop/cai/aaas/upload-job
+#    - /Users/taamedag/Desktop/cai/aaas/chat-api
     - /Users/taamedag/Desktop/cai/aaas/parser-api
   blacklist:
     - tests
@@ -25,9 +25,11 @@ agent:
   tools:
     search:
       name: code_search
-      description: Use this tool to look for code snippets and documentation for the repos you have access to
+      description: |-
+        Use this tool to look for code snippets and documentation.
+        The search yields better results if you specify the `repo` argument, based on the repos you have access to.
       search_strategy: hybrid
-      top_k: 10
+      top_k: 5
     repo:
       name: get_all_repos
       description: Use this tool to get a list of repos you have access to
