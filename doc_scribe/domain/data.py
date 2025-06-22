@@ -7,12 +7,12 @@ from pydantic import BaseModel, computed_field
 class ReferenceType(Enum):
     IMPORT = "IMPORT"
     FROM_IMPORT = "FROM_IMPORT"
-    USAGE = "USAGE"
     INHERITANCE = "INHERITANCE"
     TYPE_ANNOTATION = "TYPE_ANNOTATION"
     CALL = "CALL"
     ATTRIBUTE_ACCESS = "ATTRIBUTE_ACCESS"
     DECORATOR = "DECORATOR"
+    ASSIGNMENT = "ASSIGNMENT"
 
 
 class ReferenceData(BaseModel):

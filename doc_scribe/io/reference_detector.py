@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from pathlib import Path
 
 from tree_sitter import Node
@@ -12,6 +13,22 @@ class ReferenceDetector:
         self.parser = get_parser(language)
         self.files = files
 
+        self.node_handlers = {
+            "class_definition": (self._handle_inheritance, ReferenceType.TYPE_ANNOTATION),
+            "class_declaration": (self._handle_inheritance, ReferenceType.TYPE_ANNOTATION),
+            "call": (self._handle_function_call, ReferenceType.CALL),
+            "type": (self._handle_type_annotation, ReferenceType.TYPE_ANNOTATION),
+            "type_annotation": (self._handle_type_annotation, ReferenceType.TYPE_ANNOTATION),
+            "generic_type": (self._handle_type_annotation, ReferenceType.TYPE_ANNOTATION),
+            "attribute": (self._handle_attribute_access, ReferenceType.ATTRIBUTE_ACCESS),
+            "decorator": (self._handle_decorator, ReferenceType.DECORATOR),
+            "assignment": (self._handle_assignment, ReferenceType.ASSIGNMENT),
+            "assignment_expression": (self._handle_assignment, ReferenceType.ASSIGNMENT),
+            "augmented_assignment": (self._handle_assignment, ReferenceType.ASSIGNMENT),
+            "variable_declaration": (self._handle_variable_declaration, ReferenceType.ASSIGNMENT),
+            "variable_declarator": (self._handle_variable_declaration, ReferenceType.ASSIGNMENT),
+        }
+
     def resolve_references(self, data: list[CodeData]) -> dict[str, CodeData]:
         """
         Find all references for each CodeData object across all files in the repo.
@@ -19,12 +36,7 @@ class ReferenceDetector:
         """
         # Create lookups for efficient searching
         # Key: fully qualified name (module.name), Value: CodeData object
-        qualified_name_to_code_data = {}
-
-        for code_data in data:
-            # Fully qualified name
-            qualified_name = f"{code_data.module}.{code_data.name}".lstrip(".")
-            qualified_name_to_code_data[qualified_name] = code_data.model_copy()
+        qualified_name_to_code_data = {f"{d.module}.{d.name}".lstrip("."): d.model_copy() for d in data}
 
         # Process each file to find references
         for file_path in self.files:
@@ -46,6 +58,11 @@ class ReferenceDetector:
 
         # First, extract imports to understand the context
         imports_context = self._extract_imports_context(root_node)
+
+        # Add fake imports for locally defined symbols
+        for data in qualified_name_to_code_data.values():
+            if data.file_path == file_path.relative_to(self.codebase_path):
+                imports_context[data.name] = f"{data.module}.{data.name}"
 
         def walk_node(node: Node) -> None:
             # Check current node for references
@@ -109,50 +126,23 @@ class ReferenceDetector:
         imports_context: dict[str, str],
     ) -> None:
         """Check a specific node for references and add them to the appropriate CodeData objects."""
-        data = None
-        ref_type = None
+        handler_tuple = self.node_handlers.get(node.type)
+        if not handler_tuple:
+            return
 
-        # Class inheritance
-        if node.type in ["class_definition", "class_declaration"]:
-            data, node = self._handle_inheritance(node, qualified_name_to_code_data, imports_context)
-            ref_type = ReferenceType.TYPE_ANNOTATION
-
-        # Function calls and instantiation
-        elif node.type == "call":
-            data, node = self._handle_function_call(node, qualified_name_to_code_data, imports_context)
-            # Determine if it's instantiation or method call
-            ref_type = ReferenceType.CALL
-
-        # Type annotations
-        elif node.type in ["type", "type_annotation", "generic_type"]:
-            data, node = self._handle_type_annotation(node, qualified_name_to_code_data, imports_context)
-            ref_type = ReferenceType.TYPE_ANNOTATION
-
-        # Attribute access
-        elif node.type == "attribute":
-            data, node = self._handle_attribute_access(node, qualified_name_to_code_data, imports_context)
-            ref_type = ReferenceType.ATTRIBUTE_ACCESS
-
-        # Decorators
-        elif node.type == "decorator":
-            data, node = self._handle_decorator(node, qualified_name_to_code_data, imports_context)
-            ref_type = ReferenceType.DECORATOR
-
-        # General identifier usage
-        elif node.type == "identifier":
-            data, node = self._handle_identifier_usage(node, qualified_name_to_code_data, imports_context)
-            ref_type = ReferenceType.USAGE
-
-        if ref_type and data and self._is_relevant_reference(data, file_path):
-            line, column = self._get_line_column(node, code)
-            reference = ReferenceData(
-                type=ref_type,
-                file=file_path,
-                line=line,
-                column=column,
-                text=node.text.decode().strip(),
-            )
-            data.references.append(reference)
+        handler_func, ref_type = handler_tuple
+        for data in handler_func(node, qualified_name_to_code_data, imports_context):
+            if ref_type and data:
+                line, column = self._get_line_column(node, code)
+                reference = ReferenceData(
+                    type=ref_type,
+                    file=file_path,
+                    line=line,
+                    column=column,
+                    text=node.text.decode().strip(),
+                )
+                if self._is_relevant_reference(data, reference):
+                    data.references.append(reference)
 
     def _resolve_reference_target(
         self,
@@ -160,11 +150,7 @@ class ReferenceDetector:
         qualified_name_to_code_data: dict[str, CodeData],
         imports_context: dict[str, str],
     ) -> CodeData | None:
-        """
-        Resolve an identifier to the appropriate CodeData object(s).
-        Returns a list because there might be ambiguity.
-        """
-
+        """Resolve an identifier to the appropriate CodeData object."""
         # 1. Try exact qualified match first
         if identifier in qualified_name_to_code_data:
             return qualified_name_to_code_data[identifier]
@@ -182,7 +168,7 @@ class ReferenceDetector:
         node: Node,
         qualified_name_to_code_data: dict[str, CodeData],
         imports_context: dict[str, str],
-    ) -> tuple[CodeData | None, Node]:
+    ) -> Iterator[CodeData]:
         """Handle class inheritance like 'class Child(Parent)'"""
         # Look for superclass list or extends clause
         superclass_node = node.child_by_field_name("superclasses") or node.child_by_field_name("extends")
@@ -199,52 +185,65 @@ class ReferenceDetector:
                         parent_name, qualified_name_to_code_data, imports_context
                     )
 
-                    return code_data, node
-
-        return None, node
+                    yield code_data
 
     def _handle_function_call(
         self,
         node: Node,
         qualified_name_to_code_data: dict[str, CodeData],
         imports_context: dict[str, str],
-    ) -> tuple[CodeData | None, Node]:
+    ) -> Iterator[CodeData]:
         """Handle function calls and instantiation like 'ClassName()' or 'obj.method()'"""
         function_node = node.child_by_field_name("function")
-        if not function_node:
-            return None, node
 
-        function_text = function_node.text.decode()
+        if function_node:
+            function_text = function_node.text.decode()
 
-        # Extract the base identifier from qualified calls like 'module.Class()'
-        base_identifier = function_text.split(".")[0] if "." in function_text else function_text
+            # Extract the base identifier from qualified calls like 'module.Class()'
+            base_identifier = function_text.split(".")[0] if "." in function_text else function_text
 
-        code_data = self._resolve_reference_target(base_identifier, qualified_name_to_code_data, imports_context)
+            code_data = self._resolve_reference_target(base_identifier, qualified_name_to_code_data, imports_context)
 
-        return code_data, node
+            yield code_data
 
     def _handle_type_annotation(
         self,
         node: Node,
         qualified_name_to_code_data: dict[str, CodeData],
         imports_context: dict[str, str],
-    ) -> tuple[CodeData | None, Node]:
-        """Handle type annotations like 'def func(param: ClassName)'"""
-        type_text = node.text.decode()
+    ) -> Iterator[CodeData]:
+        """
+        Handle type annotations like 'def func(param: MyClass)'
+        or `Annotated[MyClass, Depends(get_my_class)]`.
+        """
+        refs = []
+        nodes_to_visit = [node]
 
-        # Extract base type name (handle generics like list[ClassName])
-        base_type = type_text.split("[")[0].split(".")[0] if "[" in type_text or "." in type_text else type_text
+        while nodes_to_visit:
+            current = nodes_to_visit.pop()
+            if current.type == "identifier":
+                identifier = current.text.decode()
+                refs.append((identifier, current))
+            elif current.type == "call":
+                if current.children and current.children[0].type == "identifier":
+                    identifier = current.children[0].text.decode()
+                    refs.append((identifier, current.children[0]))
 
-        code_data = self._resolve_reference_target(base_type, qualified_name_to_code_data, imports_context)
+            # Add children to stack to keep exploring recursively
+            nodes_to_visit.extend(current.children)
 
-        return code_data, node
+        # Only take first reference
+        for identifier, _ in refs:
+            code_data = self._resolve_reference_target(identifier, qualified_name_to_code_data, imports_context)
+            if code_data:
+                yield code_data
 
     def _handle_attribute_access(
         self,
         node: Node,
         qualified_name_to_code_data: dict[str, CodeData],
         imports_context: dict[str, str],
-    ) -> tuple[CodeData | None, Node]:
+    ) -> Iterator[CodeData]:
         """Handle attribute access like 'ClassName.attribute' or 'obj.method'"""
         attr_text = node.text.decode()
 
@@ -252,14 +251,14 @@ class ReferenceDetector:
         base_name = attr_text.split(".")[0]
 
         code_data = self._resolve_reference_target(base_name, qualified_name_to_code_data, imports_context)
-        return code_data, node
+        yield code_data
 
     def _handle_decorator(
         self,
         node: Node,
         qualified_name_to_code_data: dict[str, CodeData],
         imports_context: dict[str, str],
-    ) -> tuple[CodeData | None, Node]:
+    ) -> Iterator[CodeData]:
         """Handle decorators like '@ClassName' or '@module.decorator'"""
         decorator_text = node.text.decode()
 
@@ -267,24 +266,66 @@ class ReferenceDetector:
         decorator_name = decorator_text.lstrip("@").split("(")[0].split(".")[0]
 
         code_data = self._resolve_reference_target(decorator_name, qualified_name_to_code_data, imports_context)
-        return code_data, node
+        yield code_data
 
-    def _handle_identifier_usage(
+    def _handle_assignment(
         self,
         node: Node,
         qualified_name_to_code_data: dict[str, CodeData],
         imports_context: dict[str, str],
-    ) -> tuple[CodeData | None, Node]:
-        """Handle general identifier usage"""
-        identifier = node.text.decode()
+    ) -> Iterator[CodeData]:
+        """Handle assignment expressions like 'var = ClassName' or 'var = ClassName()'"""
+        assignment_value = None
 
-        # Skip if this is the definition itself
-        if self._is_definition_node(node):
-            return None, node
+        # Find the right-hand side of the assignment
+        for child in node.children:
+            if child.type in ["=", "assignment_operator"]:
+                operator_index = node.children.index(child)
+                if operator_index + 1 < len(node.children):
+                    assignment_value = node.children[operator_index + 1]
+                    break
 
-        # Resolve the identifier to target CodeData objects
-        code_data = self._resolve_reference_target(identifier, qualified_name_to_code_data, imports_context)
-        return code_data, node
+        if assignment_value:
+            if assignment_value.type == "identifier":
+                identifier = assignment_value.text.decode()
+                code_data = self._resolve_reference_target(identifier, qualified_name_to_code_data, imports_context)
+                yield code_data  # return full assignment node instead of just identifier
+
+            if assignment_value.type == "call":
+                if assignment_value.children and assignment_value.children[0].type == "identifier":
+                    identifier = assignment_value.children[0].text.decode()
+                    code_data = self._resolve_reference_target(identifier, qualified_name_to_code_data, imports_context)
+                    yield code_data  # return full assignment node
+
+                if assignment_value.children and assignment_value.children[0].type == "attribute":
+                    yield from self._handle_attribute_access(
+                        assignment_value.children[0], qualified_name_to_code_data, imports_context
+                    )
+
+    def _handle_variable_declaration(
+        self,
+        node: Node,
+        qualified_name_to_code_data: dict[str, CodeData],
+        imports_context: dict[str, str],
+    ) -> Iterator[CodeData]:
+        """Handle variable declarations with initialization like 'MyClass var = new MyClass()'"""
+        for child in node.children:
+            if child.type in ["call", "identifier", "attribute"]:
+                if child.type == "identifier":
+                    identifier = child.text.decode()
+                    code_data = self._resolve_reference_target(identifier, qualified_name_to_code_data, imports_context)
+                    yield code_data  # full variable declaration node
+
+                if child.type == "call":
+                    if child.children and child.children[0].type == "identifier":
+                        identifier = child.children[0].text.decode()
+                        code_data = self._resolve_reference_target(
+                            identifier, qualified_name_to_code_data, imports_context
+                        )
+                        yield code_data  # full declaration node
+
+                elif child.type == "attribute":
+                    yield from self._handle_attribute_access(child, qualified_name_to_code_data, imports_context)
 
     def _get_line_column(self, node: Node, code: str) -> tuple[int, int]:
         """Get line and column numbers for a node (1-indexed)"""
@@ -305,7 +346,7 @@ class ReferenceDetector:
             parent = parent.parent
         return False
 
-    def _is_relevant_reference(self, code_data: CodeData, ref_file_path: Path) -> bool:
+    def _is_relevant_reference(self, data: CodeData, reference: ReferenceData) -> bool:
         """
         Determine if a reference is relevant to a specific CodeData object.
         This helps with disambiguation when multiple objects have the same name.
@@ -316,5 +357,10 @@ class ReferenceDetector:
         # - Analyzing module structure
         # - Using qualified names
 
-        # Don't reference itself
-        return code_data.file_path != ref_file_path.relative_to(self.codebase_path)
+        # Avoid multiple references of the same type at the same line
+        existing = [
+            ref
+            for ref in data.references
+            if ref.type == reference.type and ref.file == reference.file and ref.line == reference.line
+        ]
+        return not existing
