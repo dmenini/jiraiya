@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -9,8 +9,9 @@ import yaml  # type: ignore[import-untyped]
 from pydantic_ai import Agent
 
 from doc_scribe.agent.components import create_agent
-from doc_scribe.agent.tools import ToolContext
+from doc_scribe.agent.tools import SearchToolContext, ToolContext
 from doc_scribe.domain.config import Config
+from doc_scribe.io.jira_ticket_manager import JiraIssueManager
 from doc_scribe.settings import Settings
 from doc_scribe.store.code_store import CodeVectorStore
 
@@ -34,6 +35,8 @@ class ChatApp:
             st.session_state.usage = None
         if "agent_initialized" not in st.session_state:
             st.session_state.agent_initialized = True
+        if "last_user_prompt" not in st.session_state:
+            st.session_state.last_user_prompt = None
 
     def display_chat_history(self) -> None:
         """Display the chat history in the Streamlit interface."""
@@ -41,60 +44,72 @@ class ChatApp:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    def handle_user_input(self) -> None:
-        """Handle user input and generate agent response."""
-        if prompt := st.chat_input("Type your message here..."):
-            # Add user message to session state
-            st.session_state.messages.append({"role": "user", "content": prompt})
+    def _run_agent_and_append_response(self, prompt: str) -> None:
+        """Runs the agent, updates state and displays assistant message."""
+        st.session_state.last_user_prompt = prompt
 
-            # Display user message
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response = self.agent.run_sync(
+                    user_prompt=prompt,
+                    deps=self.context,
+                    message_history=st.session_state.raw_history,
+                )
+                message = response.output
+                st.session_state.raw_history = response.all_messages()
+                st.session_state.usage = response.usage().__dict__
+            st.markdown(message)
+
+        st.session_state.messages.append({"role": "assistant", "content": message})
+
+    def handle_user_input(self) -> None:
+        if prompt := st.chat_input("Type your message here..."):
+            st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-            # Generate and display assistant response
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    response = self.agent.run_sync(
-                        user_prompt=prompt,
-                        deps=self.context,
-                        message_history=st.session_state.raw_history,
-                    )
-                    message = response.output
-                    st.session_state.raw_history = response.all_messages()
-                    st.session_state.usage = response.usage().__dict__
-                st.markdown(message)
+            self._run_agent_and_append_response(prompt)
 
-            # Add assistant response to session state
-            st.session_state.messages.append({"role": "assistant", "content": message})
+    def retry_last_message(self) -> None:
+        if not st.session_state.last_user_prompt:
+            st.warning("No previous message to retry.")
+            return
+
+        if st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant":
+            st.session_state.messages.pop()
+            st.session_state.raw_history.pop()
+
+        self._run_agent_and_append_response(st.session_state.last_user_prompt)
 
     def display_sidebar(self) -> None:
-        """Display sidebar with app information and controls."""
         with st.sidebar:
             st.title("🤖 Chat Settings")
             st.write(f"**LLM:** {self.agent.model.model_name}")
             st.write(f"**Documents:** {self.context.vectorstore.count()}")
-            st.write(f"**Repos:**")
+            st.write("**Repos:**")
             for repo in self.context.vectorstore.get_all_repos():
-                st.write(f"{repo}")
+                st.write(f"* {repo}")
 
             st.divider()
 
-            # Chat statistics
             st.subheader("📊 Chat Stats")
-            user_messages = len([msg for msg in st.session_state.messages if msg["role"] == "user"])
-            assistant_messages = len([msg for msg in st.session_state.messages if msg["role"] == "assistant"])
+            user_messages = len([m for m in st.session_state.messages if m["role"] == "user"])
+            assistant_messages = len([m for m in st.session_state.messages if m["role"] == "assistant"])
             st.write(f"User messages: {user_messages}")
             st.write(f"Assistant messages: {assistant_messages}")
             st.write(f"Usage: {st.session_state.usage}")
 
             st.divider()
 
-            # Controls
             st.subheader("🛠️ Controls")
             if st.button("Clear Chat History", type="secondary"):
                 st.session_state.messages = []
                 st.session_state.raw_history = []
+                st.session_state.last_user_prompt = None
                 st.rerun()
+
+            if st.button("Retry Last Message", type="primary"):
+                self.retry_last_message()
 
             if st.button("Export Chat", type="secondary"):
                 chat_data = {
@@ -120,7 +135,6 @@ class ChatApp:
 
 
 def main() -> None:
-    # Initialize the Pydantic agent
     st.set_page_config(page_title="Code QA", page_icon="🤖", layout="wide")
 
     config_path = Path(__file__).parent / "agent_config.yaml"
@@ -134,7 +148,10 @@ def main() -> None:
         text_encoder=config.data.dense_encoder,
         host=settings.qdrant_host,
         port=settings.qdrant_port,
+        cache_dir=config.data.cache_dir,
     )
+
+    jira = JiraIssueManager(server=settings.jira_server, token=str(settings.jira_token))
 
     agent = create_agent(config=config.agent)
 
@@ -148,7 +165,12 @@ def main() -> None:
 
         return f"The repositories you have access to are: {', '.join(repos)}.\n"
 
-    tool_context = ToolContext(vectorstore=vectorstore, **config.agent.tools.search.model_dump())
+    tool_config = config.agent.tools.search.model_dump() | config.agent.tools.jira.model_dump()
+    tool_context = ToolContext(
+        vectorstore=vectorstore,
+        jira_client=jira,
+        **tool_config,
+    )
 
     chat_app = ChatApp(agent, tool_context)
     chat_app.run()

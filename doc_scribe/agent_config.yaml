@@ -4,11 +4,12 @@ data:
   dense_encoder: sentence-transformers/all-MiniLM-L6-v2
   bm25_encoder: Qdrant/bm25
   late_encoder: jinaai/jina-colbert-v2
+  cache_dir: /Users/taamedag/Desktop/personal/doc-scribe/models
   codebases:
     - /Users/taamedag/Desktop/cai/aaas/knowledge-manager
     - /Users/taamedag/Desktop/cai/aaas/upload-job
-#    - /Users/taamedag/Desktop/cai/aaas/chat-api
-#    - /Users/taamedag/Desktop/cai/aaas/parser-api
+    - /Users/taamedag/Desktop/cai/aaas/chat-api
+    - /Users/taamedag/Desktop/cai/aaas/parser-api
   blacklist:
     - tests
     - evaluation
@@ -19,7 +20,7 @@ data:
 agent:
   retries: 3
   llm:
-    name: CLAUDE_3_HAIKU
+    name: CLAUDE_3_5_SONNET
     temperature: 0.5
   #    max_tokens: 1_000_000
   #    top_p: 1
@@ -31,6 +32,12 @@ agent:
         The search yields better results if you specify the `repo` argument, based on the repos you have access to.
       search_strategy: hybrid
       top_k: 5
+    jira:
+      name: create_jira_ticket
+      description: |-
+        Use this tool to create tickets in Jira. Make sure to ask for user confirmation BEFORE proceeding with the usage.
+      project_key: PLATO
+      agile_object: DNA CAI RAGatouille (EAS-770657)
   prompts:
     system: |-
       You are a senior software architect with deep, contextual knowledge of the user’s codebase. 
@@ -51,6 +58,7 @@ agent:
       * Think like a seasoned engineer; avoid generic or superficial answers
       * Reason about cross-cutting concerns (background jobs, events, observability, retries, external APIs, etc.)
       * Suggest improvements, alternatives, or reusable components where relevant
+      * Before creating Jira tickets, ask for user confirmation
 
       ### Output Types
 

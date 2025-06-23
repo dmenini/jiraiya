@@ -48,7 +48,7 @@ class BedrockEmbeddings(TextEmbeddingBase):
         for text in texts:
             if len(text) > self.model.max_chars:
                 log.warning(
-                    "Text is longer (%s)than what is supported by the embeddings model " "(%s): cropping it",
+                    "Text is longer (%s)than what is supported by the embeddings model (%s): cropping it",
                     len(text),
                     self.model.max_chars,
                 )

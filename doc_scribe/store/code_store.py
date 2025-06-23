@@ -1,10 +1,11 @@
 import json
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 from fastembed import TextEmbedding
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Record, ScoredPoint, models
+from qdrant_client.http.models import models, Record, ScoredPoint
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
 from doc_scribe.domain.data import CodeData, SearchResult, TextData
@@ -17,11 +18,12 @@ class CodeVectorStore:
         tenant: str,
         code_encoder: str,
         text_encoder: str,
+        cache_dir: str | None = None,
         host: str = "localhost",
         port: int = 6333,
     ) -> None:
-        self.code_encoder = TextEmbedding(code_encoder, normalize=True)
-        self.text_encoder = TextEmbedding(text_encoder, normalize=True)
+        self.code_encoder = self._load_model(code_encoder, cache_dir)
+        self.text_encoder = self._load_model(text_encoder, cache_dir)
 
         self.tenant = tenant
         self.qdrant = QdrantClient(host=host, port=port)
@@ -29,6 +31,12 @@ class CodeVectorStore:
         self.collection = f"{tenant}_class"
 
         self._ensure_collection(self.collection)
+
+    def _load_model(self, model_id: str, cache_dir: str) -> TextEmbedding:
+        if Path(cache_dir).is_dir():
+            return TextEmbedding(model_id, cache_dir=cache_dir, local_files_only=True)
+        return TextEmbedding(model_id, cache_dir=cache_dir)
+
 
     def _ensure_collection(self, name: str) -> None:
         if not self.qdrant.collection_exists(name):

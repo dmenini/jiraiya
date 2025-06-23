@@ -10,17 +10,22 @@ class DataConfig(BaseModel):
     codebases: list[str]
     blacklist: list[str] = []
     reset: bool = False
+    cache_dir: str | None = None
 
 
+# TODO: split this config
 class ToolConfig(BaseModel):
     name: str
     description: str
     search_strategy: str = "similarity"
     top_k: int = 5
+    project_key: str = ""
+    agile_object: str = ""
 
 
 class ToolsConfig(BaseModel):
     search: ToolConfig
+    jira: ToolConfig | None = None
 
 
 class LLMConfig(BaseModel):
