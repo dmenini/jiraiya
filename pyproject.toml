@@ -1,0 +1,76 @@
+[project]
+name = "jiraiya"
+version = "0.1.0"
+description = "Software architect agent to interact with codebase and Jira"
+authors = ["dmenini"]
+readme = "README.md"
+
+requires-python = ">=3.13"
+
+dependencies = [
+    "httpx==0.28.1",
+    "anthropic==0.54.0",
+    "boto3==1.38.38",
+    "fastembed>=0.7.1",
+    "jira>=3.8.0",
+    "pydantic==2.11.7",
+    "pydantic-ai==0.3.1",
+    "pydantic-settings==2.9.1",
+    "pyyaml==6.0.2",
+    "qdrant-client==1.14.3",
+    "tree-sitter-language-pack==0.8.0",
+    "streamlit>=1.46.0",
+]
+
+[dependency-groups]
+dev = [
+    "coverage==7.6.4",
+    "mypy==1.16.1",
+    "pytest==8.4.1",
+    "pytest-cov==6.2.1",
+    "pytest-asyncio==0.24.0",
+    "pytest-httpx==0.35.0",
+    "pytest-mock==3.14.1",
+    "ruff==0.12.0",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint.pylint]
+max-args = 10
+
+[tool.ruff.lint]
+select = ["ALL"]
+# See https://docs.astral.sh/ruff/rules/
+ignore = [
+    "FIX", # Allow FIXME
+    "TD", # Allow TODO
+    "D", # Ignore docstring checks
+    "ANN401", # Allow dynamically typed expressions (typing.Any)
+    "COM812", # Do not require trailing comma (must be disabled to avoid conflicts with formatter)
+    "ISC001", # Allows concatenated string literals on one line (must be disabled to avoid conflicts with formatter)
+    "B008", # Do not perform function call in argument defaults -> Ignore because of fastapi.Depends usage
+    "FA102", # `from __future__ import` annotations are not neeeded with python3.12
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101", # Asserts are allowed in tests
+    "ARG", # Unused function args -> Fixtures are functionally relevant
+    "FBT", # Don't care about booleans as positional arguments in tests, e.g. via @pytest.mark.parametrize()
+    "SLF001",
+]
+
+[tool.mypy]
+ignore_missing_imports = "True"
+check_untyped_defs = "True"
+disable_error_code = []
+disallow_untyped_defs = "True"
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disable_error_code = ["method-assign", "attr-defined"]
+
+[tool.coverage.run]
+omit = ["tests/*"]

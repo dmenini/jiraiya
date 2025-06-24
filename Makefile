@@ -1,0 +1,61 @@
+PACKAGE_NAME=jiraiya
+UV=uv
+
+VERSION=dev
+
+install:  # ci
+	$(UV) sync
+
+clean-install:
+	rm -rf .venv
+	$(UV) lock
+	$(UV) sync
+
+test:  # ci
+	$(MAKE) --keep-going install test-format test-lint test-coverage
+
+test-lint lint:
+	$(UV) run mypy $(PACKAGE_NAME) tests
+	$(UV) run ruff check $(PACKAGE_NAME) tests
+
+test-format:
+	$(UV) run ruff format --check $(PACKAGE_NAME) tests
+
+format:
+	$(UV) run ruff format $(PACKAGE_NAME) tests
+	$(UV) run ruff check --fix $(PACKAGE_NAME) tests
+
+test-coverage:
+	$(UV) run pytest \
+		--capture=no \
+		--cov \
+		--cov-branch \
+		--cov-report=term-missing \
+		--cov-report=xml \
+		--junit-xml=report.xml \
+		tests
+
+TEST_TARGET ?= tests/
+
+unit-test:
+	$(UV) run pytest $(TEST_TARGET)
+
+# If building on ARM platform (M1 Mac) use buildx plugin
+# https://github.com/docker/buildx#getting-started
+DOCKER_BUILD=docker build
+ifeq ($(shell uname -p),arm)
+	DOCKER_BUILD=docker buildx build --platform=linux/amd64 --load
+endif
+
+run:
+	$(UV) run ./run.sh
+
+start-qdrant:
+	docker run -d -p 6333:6333 -p 6334:6334 \
+		-v "$(pwd)/qdrant_storage:/qdrant/storage:z" \
+		qdrant/qdrant
+
+stop-qdrant:
+	docker stop qdrant
+
+.PHONY: install clean-install test lint format test-lint test-coverage test-format unit-test build run start-qdrant
