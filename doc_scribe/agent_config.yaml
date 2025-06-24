@@ -2,8 +2,6 @@ data:
   tenant: aaas
   code_encoder: jinaai/jina-embeddings-v2-base-code
   dense_encoder: sentence-transformers/all-MiniLM-L6-v2
-  bm25_encoder: Qdrant/bm25
-  late_encoder: jinaai/jina-colbert-v2
   cache_dir: /Users/taamedag/Desktop/personal/doc-scribe/models
   codebases:
     - /Users/taamedag/Desktop/cai/aaas/knowledge-manager
@@ -22,8 +20,8 @@ agent:
   llm:
     name: CLAUDE_3_5_SONNET
     temperature: 0.5
-  #    max_tokens: 1_000_000
-  #    top_p: 1
+    max_tokens: 1_000_000
+    top_p: 1
   tools:
     search:
       name: code_search
@@ -36,8 +34,8 @@ agent:
       name: create_jira_ticket
       description: |-
         Use this tool to create tickets in Jira. Make sure to ask for user confirmation BEFORE proceeding with the usage.
-      project_key: PLATO
-      agile_object: DNA CAI RAGatouille (EAS-770657)
+      project_key: MYPROJECT
+      agile_object: MYTEAM
   prompts:
     system: |-
       You are a senior software architect with deep, contextual knowledge of the user’s codebase. 

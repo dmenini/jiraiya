@@ -58,6 +58,7 @@ class JiraToolContext(BaseModel):
 def create_jira_ticket(ctx: RunContext[JiraToolContext], args: IssueCreateArgs) -> JiraIssueOutput:
     """Create a jira ticket."""
 
+    # TODO: Connect this to Jira
     client = ctx.deps.jira_client
     log.info("Created Jira ticket")
 

@@ -1,4 +1,3 @@
-import os
 from json import JSONDecodeError
 from typing import Any
 
@@ -8,8 +7,8 @@ from doc_scribe.domain.jira import JiraIssue, JiraIssueOutput
 
 
 class JiraIssueManager:
-    def __init__(self, server: str, token: str):
-        self.jira = None
+    def __init__(self, server: str, token: str) -> None:
+        self.jira = JIRA(server=server, token_auth=token)
 
     def create_issue(self, ticket: JiraIssue) -> str:
         fields: dict[str, Any] = {
@@ -37,8 +36,9 @@ class JiraIssueManager:
     def get_issue(self, ticket_key: str) -> JiraIssueOutput:
         try:
             issue = self.jira.issue(ticket_key)
-        except JSONDecodeError:
-            raise ConnectionError("Error with server response")
+        except JSONDecodeError as e:
+            msg = "Error with server response"
+            raise ConnectionError(msg) from e
 
         return JiraIssueOutput(
             key=issue.key,
@@ -61,13 +61,3 @@ class JiraIssueManager:
 
     def add_comment(self, ticket_key: str, comment: str) -> None:
         self.jira.add_comment(ticket_key, comment)
-
-
-if __name__ == "__main__":
-    manager = JiraIssueManager(
-        server="https://jira.swisscom.com",
-        token=os.getenv("JIRA_TOKEN"),
-    )
-
-    ticket = manager.get_issue("PLATO-19326")
-    print(ticket)

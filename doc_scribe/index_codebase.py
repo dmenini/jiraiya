@@ -46,9 +46,11 @@ if __name__ == "__main__":
         for file, _ in code_parser.source_files:
             log.info(file)
 
+        # Extract classes and top level functions from the codebase
         data = code_parser.extract_ast_nodes()
         data = code_parser.resolve_references(data)
 
+        # Generate documentation for each code object
         for dp in tqdm(data, total=len(data)):
             response = writer.run_sync(user_prompt=dp.source_code)
             output: TechnicalDoc = response.output
@@ -63,7 +65,7 @@ if __name__ == "__main__":
             vectorstore.add_code(data=dp)
             vectorstore.add_text(data=text)
 
-        # Add markdown documents
+        # Add markdown documents and shell scripts
         special_files = list(path.rglob("*.md")) + list(path.rglob("*.sh"))
         md_template = "File: {file_path}\n\nContent:\n{content}"
 

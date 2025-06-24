@@ -5,7 +5,7 @@ from typing import Any
 
 from fastembed import TextEmbedding
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import models, Record, ScoredPoint
+from qdrant_client.http.models import Record, ScoredPoint, models
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
 from doc_scribe.domain.data import CodeData, SearchResult, TextData
@@ -36,7 +36,6 @@ class CodeVectorStore:
         if Path(cache_dir).is_dir():
             return TextEmbedding(model_id, cache_dir=cache_dir, local_files_only=True)
         return TextEmbedding(model_id, cache_dir=cache_dir)
-
 
     def _ensure_collection(self, name: str) -> None:
         if not self.qdrant.collection_exists(name):

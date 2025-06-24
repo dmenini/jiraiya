@@ -5,8 +5,6 @@ class DataConfig(BaseModel):
     tenant: str
     dense_encoder: str = "sentence-transformers/all-MiniLM-L6-v2"
     code_encoder: str = "jinaai/jina-embeddings-v2-base-code"
-    bm25_encoder: str = "Qdrant/bm25"
-    late_encoder: str = "jinaai/jina-colbert-v2"
     codebases: list[str]
     blacklist: list[str] = []
     reset: bool = False

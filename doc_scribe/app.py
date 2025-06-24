@@ -9,7 +9,7 @@ import yaml  # type: ignore[import-untyped]
 from pydantic_ai import Agent
 
 from doc_scribe.agent.components import create_agent
-from doc_scribe.agent.tools import SearchToolContext, ToolContext
+from doc_scribe.agent.tools import ToolContext
 from doc_scribe.domain.config import Config
 from doc_scribe.io.jira_ticket_manager import JiraIssueManager
 from doc_scribe.settings import Settings
@@ -44,23 +44,20 @@ class ChatApp:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    def _run_agent_and_append_response(self, prompt: str) -> None:
+    def _run_agent(self, prompt: str) -> str:
         """Runs the agent, updates state and displays assistant message."""
         st.session_state.last_user_prompt = prompt
 
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                response = self.agent.run_sync(
-                    user_prompt=prompt,
-                    deps=self.context,
-                    message_history=st.session_state.raw_history,
-                )
-                message = response.output
-                st.session_state.raw_history = response.all_messages()
-                st.session_state.usage = response.usage().__dict__
-            st.markdown(message)
+        response = self.agent.run_sync(
+            user_prompt=prompt,
+            deps=self.context,
+            message_history=st.session_state.raw_history,
+        )
+        message = response.output
+        st.session_state.raw_history = response.all_messages()
+        st.session_state.usage = response.usage().__dict__
 
-        st.session_state.messages.append({"role": "assistant", "content": message})
+        return message
 
     def handle_user_input(self) -> None:
         if prompt := st.chat_input("Type your message here..."):
@@ -68,7 +65,12 @@ class ChatApp:
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-            self._run_agent_and_append_response(prompt)
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    message = self._run_agent(prompt)
+                    st.markdown(message)
+
+                st.session_state.messages.append({"role": "assistant", "content": message})
 
     def retry_last_message(self) -> None:
         if not st.session_state.last_user_prompt:
@@ -79,7 +81,7 @@ class ChatApp:
             st.session_state.messages.pop()
             st.session_state.raw_history.pop()
 
-        self._run_agent_and_append_response(st.session_state.last_user_prompt)
+        self._run_agent(st.session_state.last_user_prompt)
 
     def display_sidebar(self) -> None:
         with st.sidebar:
