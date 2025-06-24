@@ -2,6 +2,7 @@ data:
   tenant: aaas
   code_encoder: jinaai/jina-embeddings-v2-base-code
   dense_encoder: sentence-transformers/all-MiniLM-L6-v2
+  cache_dir: /Users/taamedag/Desktop/personal/jiraiya/models
   codebases: []
   blacklist:
     - tests
@@ -15,8 +16,6 @@ agent:
   llm:
     name: CLAUDE_3_5_SONNET
     temperature: 0.5
-    max_tokens: 1_000_000
-    top_p: 1
   tools:
     search:
       name: code_search

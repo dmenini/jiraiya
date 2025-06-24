@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, UTC
 from functools import lru_cache
 from pathlib import Path
 
@@ -128,7 +128,7 @@ class ChatApp:
 
     def run(self) -> None:
         """Main method to run the Streamlit app."""
-        st.title("🤖 Code Assistant")
+        st.title("🐸 Jiraiya")
         st.markdown("---")
 
         self.display_sidebar()
@@ -137,7 +137,7 @@ class ChatApp:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Code QA", page_icon="🤖", layout="wide")
+    st.set_page_config(page_title="Jiraiya", page_icon="🐸", layout="wide")
 
     config_path = Path(__file__).parent / "config.yaml"
     with config_path.open() as fp:

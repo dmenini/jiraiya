@@ -33,7 +33,7 @@ class CodeVectorStore:
         self._ensure_collection(self.collection)
 
     def _load_model(self, model_id: str, cache_dir: str) -> TextEmbedding:
-        if Path(cache_dir).is_dir():
+        if cache_dir and Path(cache_dir).is_dir():
             return TextEmbedding(model_id, cache_dir=cache_dir, local_files_only=True)
         return TextEmbedding(model_id, cache_dir=cache_dir)
 
