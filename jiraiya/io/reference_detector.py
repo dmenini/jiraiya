@@ -10,12 +10,13 @@ from jiraiya.domain.data import CodeData, ReferenceData, ReferenceType
 class ReferenceDetector:
     def __init__(self, codebase_path: Path, language: SupportedLanguage, files: list[Path]) -> None:
         self.codebase_path = codebase_path
+        self.language = language
         self.parser = get_parser(language)
         self.files = files
 
         self.node_handlers = {
+            # Shared or Python-specific
             "class_definition": (self._handle_inheritance, ReferenceType.TYPE_ANNOTATION),
-            "class_declaration": (self._handle_inheritance, ReferenceType.TYPE_ANNOTATION),
             "call": (self._handle_function_call, ReferenceType.CALL),
             "type": (self._handle_type_annotation, ReferenceType.TYPE_ANNOTATION),
             "type_annotation": (self._handle_type_annotation, ReferenceType.TYPE_ANNOTATION),
@@ -27,6 +28,18 @@ class ReferenceDetector:
             "augmented_assignment": (self._handle_assignment, ReferenceType.ASSIGNMENT),
             "variable_declaration": (self._handle_variable_declaration, ReferenceType.ASSIGNMENT),
             "variable_declarator": (self._handle_variable_declaration, ReferenceType.ASSIGNMENT),
+            # Kotlin-specific
+            "class_declaration": (self._handle_inheritance, ReferenceType.TYPE_ANNOTATION),
+            "object_declaration": (self._handle_inheritance, ReferenceType.TYPE_ANNOTATION),
+            "call_expression": (self._handle_function_call, ReferenceType.CALL),
+            "type_reference": (self._handle_type_annotation, ReferenceType.TYPE_ANNOTATION),
+            "type_arguments": (self._handle_type_annotation, ReferenceType.TYPE_ANNOTATION),
+            "user_type": (self._handle_type_annotation, ReferenceType.TYPE_ANNOTATION),
+            "property_declaration": (self._handle_assignment, ReferenceType.ASSIGNMENT),
+            "parameter": (self._handle_variable_declaration, ReferenceType.ASSIGNMENT),
+            "delegation_specifier": (self._handle_inheritance, ReferenceType.TYPE_ANNOTATION),
+            "annotation": (self._handle_decorator, ReferenceType.DECORATOR),
+            "annotation_entry": (self._handle_decorator, ReferenceType.DECORATOR),
         }
 
     def resolve_references(self, data: list[CodeData]) -> dict[str, CodeData]:
@@ -75,8 +88,16 @@ class ReferenceDetector:
         walk_node(root_node)
 
     def _extract_imports_context(self, root_node: Node) -> dict[str, str]:
+        if self.language == "python":
+            return self._extract_python_imports_context(root_node)
+        if self.language == "kotlin":
+            return self._extract_kotlin_imports_context(root_node)
+        raise NotImplementedError
+
+    def _extract_python_imports_context(self, root_node: Node) -> dict[str, str]:
         """
         Extract import context from a file to help resolve simple names to qualified names.
+        Supports Python-style import statements with optional aliases.
         Returns a mapping of {simple_name: qualified_name} based on imports.
         """
         imports_map = {}
@@ -110,6 +131,40 @@ class ReferenceDetector:
                             imports_map[alias.strip()] = f"{from_part}.{original_name.strip()}"
                         else:
                             imports_map[item] = f"{from_part}.{item}"
+
+            for child in node.children:
+                walk_imports(child)
+
+        walk_imports(root_node)
+        return imports_map
+
+    def _extract_kotlin_imports_context(self, root_node: Node) -> dict[str, str]:
+        """
+        Extract import context from a file to help resolve simple names to qualified names.
+        Supports Kotlin-style import statements with optional aliases.
+        Returns a mapping of {simple_name_or_alias: qualified_name}.
+        """
+
+        imports_map = {}
+
+        def walk_imports(node: Node) -> None:
+            if node.type == "import_header":
+                import_text = node.text.decode().strip()
+                # Remove the "import" keyword
+                if import_text.startswith("import "):
+                    import_body = import_text[len("import ") :].strip()
+
+                    # Handle alias: e.g. import foo.bar.Baz as BazAlias
+                    if " as " in import_body:
+                        qualified_name, alias = map(str.strip, import_body.split(" as ", 1))
+                        simple_name = alias
+                    else:
+                        qualified_name = ".".join(import_body.split(".")[:-1])
+                        # Simple name is last segment of qualified name, unless wildcard
+                        simple_name = None if qualified_name.endswith(".*") else qualified_name.split(".")[-1]
+
+                    if simple_name:
+                        imports_map[simple_name] = qualified_name
 
             for child in node.children:
                 walk_imports(child)

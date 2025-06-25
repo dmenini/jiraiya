@@ -48,6 +48,7 @@ if __name__ == "__main__":
 
         # Extract classes and top level functions from the codebase
         data = code_parser.extract_ast_nodes()
+        # TODO: handle kotlin references
         data = code_parser.resolve_references(data)
 
         # Generate documentation for each code object
@@ -70,6 +71,7 @@ if __name__ == "__main__":
         md_template = "File: {file_path}\n\nContent:\n{content}"
 
         if special_files:
+            log.info(special_files)
             for file in tqdm(special_files, total=len(special_files)):
                 content = file.read_text(encoding="utf-8")
                 text = TextData(

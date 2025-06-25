@@ -149,12 +149,13 @@ class CodeBaseParser:
         processed = []
         for class_node in class_nodes:
             full_source = self._get_full_source_with_annotations(class_node, code)
+            name = self._extract_class_name(class_node)
             processed.append(
                 CodeData(
                     type="class",
                     repo=self.repo,
                     file_path=file_path.relative_to(self.codebase_path),
-                    name=class_node.child_by_field_name("name").text.decode(),
+                    name=name,
                     source_code=full_source,
                     docstring=self._extract_docstring(class_node, code),
                 )
@@ -191,6 +192,18 @@ class CodeBaseParser:
                         raw_docstring = code[expr.start_byte : expr.end_byte]
                         return ast.literal_eval(raw_docstring)  # Unescape Python string
         return ""
+
+    def _extract_class_name(self, class_node: Node) -> str:
+        name_node = class_node.child_by_field_name("name")
+
+        # If no direct "name" child found, try to find it manually
+        if not name_node and class_node.type == "class_declaration":
+            for child in class_node.children:
+                if child.type == "type_identifier":
+                    name_node = child
+                    break
+
+        return name_node.text.decode() if name_node else ""
 
     def _find_annotations_for_node(self, target_node: Node, code: str) -> list[str]:
         """

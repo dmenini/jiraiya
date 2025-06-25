@@ -36,7 +36,7 @@ class CodeData(BaseModel):
     @computed_field
     @property
     def module(self) -> str:
-        return str(self.file_path.with_suffix("")).replace("/", ".").replace(self.repo, "")
+        return str(self.file_path.with_suffix("")).replace("/", ".").replace(self.repo, "").replace(self.name, "")
 
 
 class TextData(BaseModel):
