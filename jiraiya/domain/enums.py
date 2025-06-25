@@ -5,7 +5,7 @@ class ModelName(Enum):
     CLAUDE_3_SONNET = ("CLAUDE_3_SONNET", "bedrock:anthropic.claude-3-sonnet-20240229-v1:0")
     CLAUDE_3_HAIKU = ("CLAUDE_3_HAIKU", "bedrock:anthropic.claude-3-haiku-20240307-v1:0")
     CLAUDE_3_5_SONNET = ("CLAUDE_3_5_SONNET", "bedrock:anthropic.claude-3-5-sonnet-20240620-v1:0")
-    CLAUDE_3_7_SONNET = ("CLAUDE_3_7_SONNET", "bedrock:anthropic.claude-3-7-sonnet-20250219-v1:0")
+    CLAUDE_3_7_SONNET = ("CLAUDE_3_7_SONNET", "bedrock:eu.anthropic.claude-3-7-sonnet-20250219-v1:0")
 
     def __init__(self, name: str, bedrock_id: str) -> None:
         self._name = name
