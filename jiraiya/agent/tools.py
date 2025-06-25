@@ -59,7 +59,7 @@ def create_jira_ticket(ctx: RunContext[JiraToolContext], args: IssueCreateArgs) 
     """Create a jira ticket."""
 
     # TODO: Connect this to Jira
-    client = ctx.deps.jira_client
+    client = ctx.deps.jira_client  # noqa: F841
     log.info("Created Jira ticket")
 
     return JiraIssueOutput(**args.model_dump(), key=str(uuid.uuid4()), status="CREATED")

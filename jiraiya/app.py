@@ -1,6 +1,7 @@
 import json
 import logging
-from datetime import datetime, UTC
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -19,6 +20,16 @@ logger = logging.getLogger()
 logging.basicConfig(level=logging.INFO)
 
 settings = Settings()
+
+
+@st.cache_data(show_spinner=False)
+def get_document_count(_vectorstore: CodeVectorStore) -> int:
+    return _vectorstore.count()
+
+
+@st.cache_data(show_spinner=False)
+def get_all_repos(_vectorstore: CodeVectorStore) -> list[str]:
+    return _vectorstore.get_all_repos()
 
 
 class ChatApp:
@@ -44,33 +55,46 @@ class ChatApp:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    def _run_agent(self, prompt: str) -> str:
-        """Runs the agent, updates state and displays assistant message."""
+    async def _run_agent(self, prompt: str) -> AsyncIterator[str]:
+        """Runs the agent, updates state and streams assistant message content."""
         st.session_state.last_user_prompt = prompt
 
-        response = self.agent.run_sync(
+        async with self.agent.run_stream(
             user_prompt=prompt,
             deps=self.context,
             message_history=st.session_state.raw_history,
-        )
-        message = response.output
-        st.session_state.raw_history = response.all_messages()
-        st.session_state.usage = response.usage().__dict__
+        ) as response:
+            full_message = ""
+            async for chunk in response.stream_text(delta=True):
+                full_message += chunk
+                yield chunk
 
-        return message
+            # Update session state after stream ends
+            st.session_state.raw_history = response.all_messages()
+            st.session_state.usage = response.usage().__dict__
+            st.session_state.messages.append({"role": "assistant", "content": full_message})
 
     def handle_user_input(self) -> None:
-        if prompt := st.chat_input("Type your message here..."):
+        prompt = None
+
+        # Get the last user message if it's a retry
+        if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+            prompt = st.session_state.messages[-1]["content"]
+
+        # Otherwise, check for new input
+        prompt = prompt or st.chat_input("Type your message here...")
+
+        if not prompt:
+            return
+
+        if st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant":
             st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
 
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    message = self._run_agent(prompt)
-                    st.markdown(message)
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-                st.session_state.messages.append({"role": "assistant", "content": message})
+        with st.chat_message("assistant"), st.spinner("Thinking..."):
+            st.write_stream(self._run_agent(prompt))
 
     def retry_last_message(self) -> None:
         if not st.session_state.last_user_prompt:
@@ -81,16 +105,16 @@ class ChatApp:
             st.session_state.messages.pop()
             st.session_state.raw_history.pop()
 
-        self._run_agent(st.session_state.last_user_prompt)
-
     def display_sidebar(self) -> None:
         with st.sidebar:
             st.title("🤖 Chat Settings")
             st.write(f"**LLM:** {self.agent.model.model_name}")
-            st.write(f"**Documents:** {self.context.vectorstore.count()}")
-            st.write("**Repos:**")
-            for repo in self.context.vectorstore.get_all_repos():
-                st.write(f"* {repo}")
+
+            count = get_document_count(self.context.vectorstore)
+            st.write(f"**Documents:** {count}")
+
+            repos = get_all_repos(self.context.vectorstore)
+            st.write(f"**Repos:** {', '.join(repos)}")
 
             st.divider()
 
@@ -104,16 +128,16 @@ class ChatApp:
             st.divider()
 
             st.subheader("🛠️ Controls")
-            if st.button("Clear Chat History", type="secondary"):
+            if st.button("Clear Chat History", type="secondary", use_container_width=True):
                 st.session_state.messages = []
                 st.session_state.raw_history = []
                 st.session_state.last_user_prompt = None
                 st.rerun()
 
-            if st.button("Retry Last Message", type="primary"):
+            if st.button("Retry Last Message", type="primary", use_container_width=True):
                 self.retry_last_message()
 
-            if st.button("Export Chat", type="secondary"):
+            if st.button("Export Chat", type="secondary", use_container_width=True):
                 chat_data = {
                     "chat_history": st.session_state.messages,
                     "timestamp": datetime.now(tz=UTC).isoformat(),
@@ -124,6 +148,7 @@ class ChatApp:
                     data=json.dumps(chat_data, indent=2),
                     file_name=f"chat_export_{datetime.now(tz=UTC).strftime('%Y%m%d_%H%M%S')}.json",
                     mime="application/json",
+                    use_container_width=True,
                 )
 
     def run(self) -> None:
@@ -152,12 +177,9 @@ def main() -> None:
         port=settings.qdrant_port,
         cache_dir=config.data.cache_dir,
     )
-
     jira = JiraIssueManager(server=settings.jira_server, token=str(settings.jira_token))
 
     agent = create_agent(config=config.agent)
-
-    logger.info("total documents %d", vectorstore.count())
 
     @lru_cache
     @agent.system_prompt()

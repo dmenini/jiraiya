@@ -1,12 +1,5 @@
 #!/bin/bash
 
-project_path="$1"
-
-if [ -z "$project_path" ]; then
-    echo "Error: Missing required parameter (path to project main module)."
-    exit 1
-fi
-
 if [ ! "$AWS_DEFAULT_REGION" ]; then
   export AWS_DEFAULT_REGION=eu-central-1
   echo "No AWS_DEFAULT_REGION set, will use default: $AWS_DEFAULT_REGION"
