@@ -55,10 +55,10 @@ class ChatApp:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    async def _run_agent(self, prompt: str) -> AsyncIterator[str]:
-        """Runs the agent, updates state and streams assistant message content."""
+    async def _stream_agent(self, prompt: str) -> AsyncIterator[str]:
         st.session_state.last_user_prompt = prompt
 
+        # TODO: Fix streaming with multi tool calls
         async with self.agent.run_stream(
             user_prompt=prompt,
             deps=self.context,
@@ -69,10 +69,29 @@ class ChatApp:
                 full_message += chunk
                 yield chunk
 
-            # Update session state after stream ends
-            st.session_state.raw_history = response.all_messages()
-            st.session_state.usage = response.usage().__dict__
-            st.session_state.messages.append({"role": "assistant", "content": full_message})
+        # Update session state after stream ends
+        st.session_state.raw_history = response.all_messages()
+        st.session_state.usage = response.usage().__dict__
+        st.session_state.messages.append({"role": "assistant", "content": full_message})
+
+    def _run_agent(self, prompt: str) -> str:
+        """Runs the agent, updates state and streams assistant message content."""
+        st.session_state.last_user_prompt = prompt
+
+        response = self.agent.run_sync(
+            user_prompt=prompt,
+            deps=self.context,
+            message_history=st.session_state.raw_history,
+        )
+
+        full_message = response.output
+
+        # Update session state after stream ends
+        st.session_state.raw_history = response.all_messages()
+        st.session_state.usage = response.usage().__dict__
+        st.session_state.messages.append({"role": "assistant", "content": full_message})
+
+        return full_message
 
     def handle_user_input(self) -> None:
         prompt = None
@@ -94,7 +113,7 @@ class ChatApp:
             st.markdown(prompt)
 
         with st.chat_message("assistant"), st.spinner("Thinking..."):
-            st.write_stream(self._run_agent(prompt))
+            st.markdown(self._run_agent(prompt))
 
     def retry_last_message(self) -> None:
         if not st.session_state.last_user_prompt:
