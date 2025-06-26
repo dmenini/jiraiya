@@ -12,7 +12,7 @@ from pydantic_ai import Agent
 from jiraiya.agent.components import create_agent
 from jiraiya.agent.tools import ToolContext
 from jiraiya.domain.config import Config
-from jiraiya.io.jira_ticket_manager import JiraIssueManager
+from jiraiya.jira_.jira_issue_manager import JiraIssueManager
 from jiraiya.settings import Settings
 from jiraiya.store.code_store import CodeVectorStore
 

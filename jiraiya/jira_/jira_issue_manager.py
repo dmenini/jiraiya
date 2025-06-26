@@ -8,7 +8,7 @@ from jiraiya.domain.jira import JiraIssue, JiraIssueOutput
 
 class JiraIssueManager:
     def __init__(self, server: str, token: str) -> None:
-        self.jira = JIRA(server=server, token_auth=token)
+        self.jira = None
 
     def create_issue(self, ticket: JiraIssue) -> str:
         fields: dict[str, Any] = {

@@ -7,7 +7,7 @@ from pydantic_ai import RunContext
 
 from jiraiya.domain.data import SearchResult
 from jiraiya.domain.jira import JiraIssueOutput
-from jiraiya.io.jira_ticket_manager import JiraIssueManager
+from jiraiya.jira_.jira_issue_manager import JiraIssueManager
 from jiraiya.store.code_store import CodeVectorStore
 
 log = logging.getLogger(__name__)
