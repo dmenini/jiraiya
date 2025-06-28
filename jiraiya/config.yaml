@@ -6,15 +6,18 @@ data:
   codebases: []
   blacklist:
     - tests
-    - evaluation
     - integration_tests
+    - src/test
+    - src/integrationTest
+    - evaluation
     - cicd
     - .vscode
+    - build
   reset: false
 agent:
   retries: 3
   llm:
-    name: CLAUDE_3_5_SONNET
+    name: CLAUDE_3_7_SONNET
     temperature: 0.5
   tools:
     search:

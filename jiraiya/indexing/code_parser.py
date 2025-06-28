@@ -10,27 +10,10 @@ from tree_sitter import Node
 from tree_sitter_language_pack import SupportedLanguage, get_parser
 
 from jiraiya.domain.data import CodeData
-from jiraiya.io.reference_detector import ReferenceDetector
+from jiraiya.indexing.kotlin_reference_detector import KotlinReferenceDetector
+from jiraiya.indexing.python_reference_detector import PythonReferenceDetector
 
 log = logging.getLogger(__name__)
-
-WHITELIST_FILES = [".java", ".py", ".js", ".rs", ".kt"]
-
-NODE_TYPES = {
-    "python": {"class": "class_definition", "method": "function_definition"},
-    "java": {"class": "class_declaration", "method": "method_declaration"},
-    "kotlin": {"class": "class_declaration", "method": "method_declaration"},
-    "rust": {"class": "struct_item", "method": "function_item"},
-    "javascript": {"class": "class_declaration", "method": "method_definition"},
-}
-
-REFERENCE_IDENTIFIERS = {
-    "python": {"class": "identifier", "method": "call", "child_field_name": "function"},
-    "java": {"class": "identifier", "method": "method_invocation", "child_field_name": "name"},
-    "kotlin": {"class": "identifier", "method": "method_invocation", "child_field_name": "name"},
-    "javascript": {"class": "identifier", "method": "call_expression", "child_field_name": "function"},
-    "rust": {"class": "identifier", "method": "call_expression", "child_field_name": "function"},
-}
 
 FILE_EXTENSION_LANGUAGE_MAP: dict[str, SupportedLanguage] = {
     ".java": "java",
@@ -44,14 +27,7 @@ BLACKLIST = [".venv", "venv", ".git"]
 
 class CodeBaseParser:
     CLASS_NODE_TYPES: ClassVar = {"class_definition", "class_declaration"}
-    METHOD_NODE_TYPES: ClassVar = {"function_definition", "method_declaration"}
-    REF_PARENT_TYPES: ClassVar = {
-        "type",
-        "class_type",
-        "object_creation_expression",
-        "call_expression",
-        "method_invocation",
-    }
+    METHOD_NODE_TYPES: ClassVar = {"function_definition", "method_declaration", "function_declaration"}
 
     def __init__(self, codebase_path: Path, *, blacklist: list | None = None, preload: bool = True) -> None:
         self.codebase_path = codebase_path
@@ -87,7 +63,7 @@ class CodeBaseParser:
                 return False
 
         # Rule 2: always allow whitelisted files
-        if path.suffix in WHITELIST_FILES:
+        if path.suffix in FILE_EXTENSION_LANGUAGE_MAP:
             return True
 
         # Rule 3: skip if ignored by .gitignore
@@ -149,7 +125,7 @@ class CodeBaseParser:
         processed = []
         for class_node in class_nodes:
             full_source = self._get_full_source_with_annotations(class_node, code)
-            name = self._extract_class_name(class_node)
+            name = self._extract_name(class_node)
             processed.append(
                 CodeData(
                     type="class",
@@ -165,16 +141,15 @@ class CodeBaseParser:
     def _process_method_nodes(self, method_nodes: list[Node], file_path: Path, code: str) -> list[CodeData]:
         processed = []
         for method_node in method_nodes:
-            name_node = method_node.child_by_field_name("name")
-            if name_node:
-                method_name = name_node.text.decode()
+            name = self._extract_name(method_node)
+            if name:
                 full_source = self._get_full_source_with_annotations(method_node, code)
                 processed.append(
                     CodeData(
                         type="function",
                         repo=self.repo,
                         file_path=file_path.relative_to(self.codebase_path),
-                        name=method_name,
+                        name=name,
                         source_code=full_source,
                         docstring=self._extract_docstring(method_node, code),
                     )
@@ -193,13 +168,14 @@ class CodeBaseParser:
                         return ast.literal_eval(raw_docstring)  # Unescape Python string
         return ""
 
-    def _extract_class_name(self, class_node: Node) -> str:
-        name_node = class_node.child_by_field_name("name")
+    def _extract_name(self, node: Node) -> str:
+        name_node = node.child_by_field_name("name")
 
         # If no direct "name" child found, try to find it manually
-        if not name_node and class_node.type == "class_declaration":
-            for child in class_node.children:
-                if child.type == "type_identifier":
+        node_types = self.CLASS_NODE_TYPES.union(self.METHOD_NODE_TYPES)
+        if not name_node and node.type in node_types:
+            for child in node.children:
+                if child.type in {"type_identifier", "simple_identifier"}:
                     name_node = child
                     break
 
@@ -257,7 +233,13 @@ class CodeBaseParser:
         references = None
 
         for language, files in files_by_language.items():
-            detector = ReferenceDetector(self.codebase_path, language, files)
+            if language == "python":
+                detector = PythonReferenceDetector(self.codebase_path, files)
+            elif language == "kotlin":
+                detector = KotlinReferenceDetector(self.codebase_path, files)
+            else:
+                raise NotImplementedError
+
             references = detector.resolve_references(data)
 
         if references:

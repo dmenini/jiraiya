@@ -8,7 +8,7 @@ from jiraiya.agent.components import create_docs_writer
 from jiraiya.domain.config import Config
 from jiraiya.domain.data import TextData
 from jiraiya.domain.documentation import TechnicalDoc
-from jiraiya.io.code_parser import CodeBaseParser
+from jiraiya.indexing.code_parser import CodeBaseParser
 from jiraiya.settings import Settings
 from jiraiya.store.code_store import CodeVectorStore
 
@@ -48,7 +48,6 @@ if __name__ == "__main__":
 
         # Extract classes and top level functions from the codebase
         data = code_parser.extract_ast_nodes()
-        # TODO: handle kotlin references
         data = code_parser.resolve_references(data)
 
         # Generate documentation for each code object

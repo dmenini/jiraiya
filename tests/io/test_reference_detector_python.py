@@ -1,15 +1,16 @@
 from pathlib import Path
 
 import pytest
+from tree_sitter_language_pack import get_parser
 
 from jiraiya.domain.data import CodeData, ReferenceType
-from jiraiya.io.reference_detector import ReferenceDetector
+from jiraiya.indexing.python_reference_detector import PythonReferenceDetector
 
 
 # Test fixtures and helper functions
 @pytest.fixture
-def detector() -> ReferenceDetector:
-    return ReferenceDetector(codebase_path=Path("test"), language="python", files=[])
+def detector() -> PythonReferenceDetector:
+    return PythonReferenceDetector(codebase_path=Path("test"), files=[])
 
 
 @pytest.fixture
@@ -49,7 +50,7 @@ def sample_imports_context() -> dict[str, str]:
 
 
 def test_class_inheritance_single_parent(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of single class inheritance."""
 
@@ -60,17 +61,17 @@ def test_class_inheritance_single_parent(
     """
     detector._extract_imports_context = lambda _: sample_imports_context
 
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     parent_data = sample_code_data["module.ParentClass"]
     assert len(parent_data.references) == 1
-    assert parent_data.references[0].type == ReferenceType.TYPE_ANNOTATION
+    assert parent_data.references[0].type == ReferenceType.INHERITANCE
     assert parent_data.references[0].text == code.strip()
 
 
 def test_class_inheritance_multiple_parents(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of multiple inheritance."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -80,18 +81,18 @@ def test_class_inheritance_multiple_parents(
     class Child(ParentClass, MixinClass):
         pass
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     # Should detect ParentClass reference
     parent_data = sample_code_data["module.ParentClass"]
     assert len(parent_data.references) == 1
-    assert parent_data.references[0].type == ReferenceType.TYPE_ANNOTATION
+    assert parent_data.references[0].type == ReferenceType.INHERITANCE
     assert parent_data.references[0].text == code.strip()
 
 
 def test_class_inheritance_same_file(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of multiple inheritance."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -104,18 +105,18 @@ class ParentClass:
 class MyClass(ParentClass):
     pass
 """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     # Should detect ParentClass reference
     parent_data = sample_code_data["module.ParentClass"]
     assert len(parent_data.references) == 1
-    assert parent_data.references[0].type == ReferenceType.TYPE_ANNOTATION
+    assert parent_data.references[0].type == ReferenceType.INHERITANCE
     assert parent_data.references[0].text == "class MyClass(ParentClass):\n    pass"
 
 
 def test_function_call_simple(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of simple function calls."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -124,7 +125,7 @@ def test_function_call_simple(
     code = """
     MyClass()
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     class_data = sample_code_data["module.MyClass"]
@@ -134,7 +135,7 @@ def test_function_call_simple(
 
 
 def test_function_call_qualified(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of qualified function calls."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -143,7 +144,7 @@ def test_function_call_qualified(
     code = """
     lib.MyClass()
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     # Should find reference based on base name "lib"
@@ -153,7 +154,7 @@ def test_function_call_qualified(
 
 
 def test_type_annotation_simple(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of simple type annotations."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -163,7 +164,7 @@ def test_type_annotation_simple(
 def func(param: MyType):
     pass
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     type_data = sample_code_data["module.MyType"]
@@ -173,7 +174,7 @@ def func(param: MyType):
 
 
 def test_type_annotation_generic(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of generic type annotations."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -184,7 +185,7 @@ def func(param: List[MyType]):
     pass
     """
 
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     type_data = sample_code_data["module.MyType"]
@@ -194,7 +195,7 @@ def func(param: List[MyType]):
 
 
 def test_type_annotation_annotated(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of generic type annotations."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -205,7 +206,7 @@ def func(param: Annotated[MyType, Depends(get_my_class)]):
     pass
     """
 
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     type_data = sample_code_data["module.MyType"]
@@ -220,7 +221,7 @@ def func(param: Annotated[MyType, Depends(get_my_class)]):
 
 
 def test_attribute_access_simple(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of attribute access."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -229,7 +230,7 @@ def test_attribute_access_simple(
     code = """
     MyClass.attribute
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     class_data = sample_code_data["module.MyClass"]
@@ -239,7 +240,7 @@ def test_attribute_access_simple(
 
 
 def test_method_access(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of simple identifier usage."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -248,7 +249,7 @@ def test_method_access(
     code = """
     MyClass.run()
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     class_data = sample_code_data["module.MyClass"]
@@ -260,7 +261,7 @@ def test_method_access(
 
 
 def test_decorator_simple(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of simple decorators."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -271,7 +272,7 @@ def test_decorator_simple(
 def func():
     pass
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     decorator_data = sample_code_data["module.my_decorator"]
@@ -281,7 +282,7 @@ def func():
 
 
 def test_decorator_with_parentheses(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of decorators with parentheses."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -292,7 +293,7 @@ def test_decorator_with_parentheses(
 def func():
     pass
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     decorator_data = sample_code_data["module.my_decorator"]
@@ -304,7 +305,7 @@ def func():
 
 
 def test_assignment_identifier(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of assignment to identifier."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -313,7 +314,7 @@ def test_assignment_identifier(
     code = """
     var = MyClass
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     assigned_data = sample_code_data["module.MyClass"]
@@ -323,7 +324,7 @@ def test_assignment_identifier(
 
 
 def test_assignment_call(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test detection of assignment to function call."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -332,7 +333,7 @@ def test_assignment_call(
     code = """
     var = MyClass()
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     some_data = sample_code_data["module.MyClass"]
@@ -344,7 +345,7 @@ def test_assignment_call(
 
 
 def test_no_reference_when_not_found(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test that no reference is created when identifier is not found."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -353,7 +354,7 @@ def test_no_reference_when_not_found(
     code = """
     UnknownClass
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     # No references should be added to any CodeData objects
@@ -362,7 +363,7 @@ def test_no_reference_when_not_found(
 
 
 def test_unsupported_node_type(
-    detector: ReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
+    detector: PythonReferenceDetector, sample_code_data: dict[str, CodeData], sample_imports_context: dict[str, str]
 ) -> None:
     """Test handling of unsupported node types."""
     detector._extract_imports_context = lambda _: sample_imports_context
@@ -371,7 +372,7 @@ def test_unsupported_node_type(
     code = """
     # This is a comment that will create an unsupported node type
     """
-    node = detector.parser.parse(code.encode()).root_node
+    node = get_parser("python").parse(code.encode()).root_node
     detector._find_references_in_file(file_path, code, node, sample_code_data)
 
     # No references should be added
